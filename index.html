@@ -1,868 +1,926 @@
-import React, { useState, useEffect } from 'react';
-import { Camera, Save, Plus, Trash2, FileText, BarChart2, Star, Image as ImageIcon, CheckCircle, ChevronRight, Calculator, Download, Menu, Calendar, User, Briefcase, Tag, Search, X, Loader, Paperclip, CloudUpload, Printer } from 'lucide-react';
-
-// --- Sub-Components ---
-const SectionTitle = ({ icon, title, subtitle, rightElement }) => (
-  <div className="mb-6 pb-2 border-b border-rose-100 flex justify-between items-end no-print-element">
-    <div>
-      <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-        <span className="bg-rose-100 text-rose-600 p-2 rounded-lg">{icon}</span> {title}
-      </h2>
-      {subtitle && <p className="text-sm text-gray-500 mt-1 ml-11">{subtitle}</p>}
-    </div>
-    {rightElement}
-  </div>
-);
-
-const SubHeader = ({ title }) => (
-  <div className="mt-8 mb-4 flex items-center gap-2">
-     <div className="w-1 h-6 bg-rose-400 rounded-full"></div>
-     <h3 className="font-semibold text-gray-700 text-lg">{title}</h3>
-  </div>
-);
-
-const ExpandableField = ({ label, name, value, placeholder, icon, rows = 2, onChange }) => (
-  <div className="mb-6 bg-white p-4 rounded-xl shadow-sm border border-rose-50 hover:border-rose-200 transition-colors">
-    <label className="flex items-center gap-2 text-sm font-bold text-rose-600 mb-2">
-      {icon && <span className="opacity-70">{icon}</span>} {label}
-    </label>
-    <textarea
-      name={name}
-      value={value}
-      onChange={onChange}
-      rows={rows}
-      className="w-full p-3 rounded-lg border border-gray-200 focus:border-rose-400 focus:ring-2 focus:ring-rose-100 outline-none transition-all text-gray-700 resize-y"
-      placeholder={placeholder}
-    />
-  </div>
-);
-
-// --- Helper Functions ---
-const splitTextToLi = (text) => {
-  if (!text) return null;
-  return text.split('\n').filter(line => line.trim() !== '').map((line, i) => (
-    <li key={i} className="mb-1 flex items-start gap-2 break-words text-left">
-      <span className="mt-1.5 w-1.5 h-1.5 bg-rose-400 rounded-full flex-shrink-0"></span>
-      <span className="break-words w-full thai-fix-text" style={{ lineHeight: '1.6' }}>{line}</span>
-    </li>
-  ));
-};
-
-const getStatusLabel = (val) => {
-  const map = {
-    'completed': '✅ ดำเนินการเสร็จสิ้น',
-    'in-progress': '⏳ ยังไม่เสร็จสิ้น',
-    'not-started': '❌ ยังไม่ได้ดำเนินการ'
-  };
-  return map[val] || '-';
-};
-
-const getFutureLabel = (val) => {
-   const map = {
-    'continue': 'พัฒนาต่อเนื่อง',
-    'improve': 'ปรับปรุง',
-    'discontinue': 'ไม่ควรดำเนินการต่อ'
-  };
-  return map[val] || val;
-}
-
-// --- Main Component ---
-const ActivityReportApp = () => {
-  // --- State Management ---
-  const [activeTab, setActiveTab] = useState(1);
-  const [showSearchModal, setShowSearchModal] = useState(false);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isPrinting, setIsPrinting] = useState(false);
-
-  // Script URL for Google Apps Script
-  const scriptUrl = 'https://script.google.com/macros/s/AKfycbyxZ27sVENnA_mCuUHhHzVhzGwuz1NlMcr32bDuRVXxjpS4OZLECXEjTE6tTkB4st7GIg/exec';
-
-  // Initial State
-  const [formData, setFormData] = useState({
-    activityCode: '',
-    activityName: '',
-    project: '',
-    workGroup: '',
-    responsiblePerson: '',
-    activityType: 'new',
-    objectives: '',
-    budgetSource: '',
-    budgetAllocated: '',
-    expectedOutcome: '',
-    indicators: [
-      { id: 1, type: 'quantity', detail: '', method: '', tool: '' }
-    ],
-    pdca: [
-      { step: 'ขั้นการวางแผน (P)', operation: '', duration: '', budget: '', responsible: '' },
-      { step: 'ขั้นปฏิบัติ (D)', operation: '', duration: '', budget: '', responsible: '' },
-      { step: 'ขั้นตรวจสอบ (C)', operation: '', duration: '', budget: '', responsible: '' },
-      { step: 'ขั้นปรับปรุง (A)', operation: '', duration: '', budget: '', responsible: '' },
-    ],
-    budgetUsed: '',
-    activityStatus: 'completed',
-    indicatorResults: [],
-    futureOperation: 'continue',
-    problems: [
-      { type: 'ด้านบุคลากร', problem: '', solution: '' },
-      { type: 'ด้านงบประมาณ', problem: '', solution: '' },
-      { type: 'ด้านวัสดุอุปกรณ์', problem: '', solution: '' },
-      { type: 'ด้านประสานงานและบริการ', problem: '', solution: '' },
-    ],
-    resultsReceived: '',
-    signatures: {
-      reporter: '',
-      deputy: 'นางสาวนราพร  ตาคำแสง',
-      director: 'นางภักดิ์ศรินญา คมน์สุทธิแสน'
-    },
-    assessments: {
-      part1_1: 5, part1_2: 5, part1_3: 5, part1_4: 5, part1_5: 5,
-      part2_1: 5, part2_2: 5, part2_3: 5, part2_4: 5,
-      part3_1: 5, part3_2: 5, part3_3: 5
-    },
-    images: [], 
-  });
-
-  // --- Sync Logic ---
-  useEffect(() => {
-    const newResults = formData.indicators.map((ind, index) => {
-      const existing = formData.indicatorResults[index];
-      return {
-        id: ind.id,
-        detail: ind.detail,
-        target: existing?.target || '',
-        result: existing?.result || '',
-        assessment: existing?.assessment || 'achieved'
-      };
-    });
-    setFormData(prev => ({ ...prev, indicatorResults: newResults }));
-  }, [formData.indicators]);
-
-  useEffect(() => {
-    setFormData(prev => ({
-      ...prev,
-      signatures: { ...prev.signatures, reporter: prev.responsiblePerson }
-    }));
-  }, [formData.responsiblePerson]);
-
-  // --- Utils ---
-  const formatNumber = (num) => {
-    if (num === '' || num === null || num === undefined || isNaN(num)) return '0.00';
-    return Number(num).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  };
-
-  const parseNumberInput = (val) => {
-    if (!val) return '';
-    return val.replace(/,/g, '');
-  };
-
-  const handleNumberBlur = (e) => {
-    const { name, value } = e.target;
-    const cleanVal = parseNumberInput(value);
-    if (cleanVal && !isNaN(cleanVal)) {
-      setFormData({ ...formData, [name]: formatNumber(cleanVal) });
-    }
-  };
-
-  const handleNumberFocus = (e) => {
-    const { name, value } = e.target;
-    const cleanVal = parseNumberInput(value);
-    setFormData({ ...formData, [name]: cleanVal });
-  };
-
-  // --- Google Sheets Logic ---
-  const fetchGoogleSheetData = async () => {
-    setIsLoading(true);
-    const SHEET_ID = '1PnBadpG0nDIi4SKwGlZkiOOtJBGLZyOlVVlTThKTxkg';
-    const SHEET_NAME = 'กิจกรรม';
-    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
-
-    try {
-      const response = await fetch(url);
-      const data = await response.text();
-      const rows = parseCSV(data);
-      const filtered = rows.filter(row => {
-        const name = row[4] || ''; 
-        const person = row[5] || ''; 
-        const term = searchTerm.toLowerCase();
-        return name.toLowerCase().includes(term) || person.toLowerCase().includes(term);
-      });
-      setSearchResults(filtered);
-    } catch (error) {
-      console.error("Error fetching sheet:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const parseCSV = (str) => {
-    const rows = [];
-    let currentRow = [];
-    let currentCell = '';
-    let inQuotes = false;
-    for (let i = 0; i < str.length; i++) {
-      const char = str[i];
-      if (char === '"') inQuotes = !inQuotes;
-      else if (char === ',' && !inQuotes) { currentRow.push(currentCell); currentCell = ''; }
-      else if (char === '\n' && !inQuotes) { currentRow.push(currentCell); rows.push(currentRow); currentRow = []; currentCell = ''; }
-      else currentCell += char;
-    }
-    return rows.slice(1);
-  };
-
-  const selectActivity = (row) => {
-    setFormData(prev => ({
-      ...prev,
-      activityCode: row[0]?.replace(/"/g, '') || '',
-      workGroup: row[1]?.replace(/"/g, '') || '',
-      project: row[3]?.replace(/"/g, '') || '',
-      activityName: row[4]?.replace(/"/g, '') || '',
-      responsiblePerson: row[5]?.replace(/"/g, '') || '',
-      budgetSource: row[6]?.replace(/"/g, '') || '',
-      budgetAllocated: formatNumber(parseNumberInput(row[8]?.replace(/"/g, '') || '0')),
-      budgetUsed: formatNumber(parseNumberInput(row[9]?.replace(/"/g, '') || '0')),
-    }));
-    setShowSearchModal(false);
-  };
-
-  const handleSaveToCloud = async () => {
-    setIsSaving(true);
-    const payload = {
-      ...formData,
-      budgetRemaining: (parseFloat(parseNumberInput(formData.budgetAllocated)) - parseFloat(parseNumberInput(formData.budgetUsed))),
-      assessmentResult: calculateAssessmentScore(),
-      timestamp: new Date().toISOString()
-    };
-    try {
-      await fetch(scriptUrl, { method: 'POST', mode: 'no-cors', body: JSON.stringify(payload) });
-      setShowSuccessModal(true);
-    } catch (error) {
-      alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  // --- NATIVE PRINT VIA POPUP WINDOW (Robust Solution) ---
-  const handlePrintWindow = () => {
-    setIsPrinting(true);
-    const content = document.getElementById('infographic-content');
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>รายงานผลการดำเนินงานกิจกรรม</title>
     
-    if (content) {
-      // Create a new window
-      const printWindow = window.open('', '_blank', 'width=900,height=800');
-      
-      if (printWindow) {
-        // Construct the full HTML for the print window
-        printWindow.document.write(`
-          <html>
-            <head>
-              <title>${formData.activityName || 'Activity Report'}</title>
-              <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-              <script src="https://cdn.tailwindcss.com"></script>
-              <style>
-                /* Forces hide header/footer in print */
-                @page {
-                   size: A4;
-                   margin: 5mm; /* ลดขอบเหลือ 5mm ตามที่ขอ */
-                }
-                body { 
-                  font-family: 'Sarabun', sans-serif; 
-                  margin: 0; 
-                  padding: 0;
-                  background-color: white;
-                }
-                #print-container {
-                   background: white;
-                   width: 100%; /* ปรับความกว้างให้พอดีกับกรอบ */
-                   min-height: 297mm;
-                   margin: 0 auto;
-                   /* No shadow in print */
-                   box-shadow: none;
-                }
-                /* Ensure Background Colors Print */
-                * {
-                  -webkit-print-color-adjust: exact !important;
-                  print-color-adjust: exact !important;
-                }
-                /* Typography Fixes for Print */
-                .thai-fix-text {
-                   line-height: 1.8 !important;
-                   display: block;
-                }
-              </style>
-            </head>
-            <body>
-              <div id="print-container">
-                ${content.innerHTML}
-              </div>
-              <script>
-                // Wait for images and Tailwind to load before printing
-                window.onload = function() {
-                   setTimeout(function() {
-                      window.print();
-                      // window.close(); 
-                   }, 1500);
-                };
-              </script>
-            </body>
-          </html>
-        `);
-        printWindow.document.close();
-        printWindow.focus();
-      } else {
-        alert("กรุณาอนุญาต Pop-up (Pop-up Blocked) เพื่อใช้งานฟังก์ชั่นพิมพ์");
-      }
+    <!-- 1. Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 2. Load Fonts (Sarabun) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- 3. Import Map for React modules (ESM) -->
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.2.0",
+            "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+            "lucide-react": "https://esm.sh/lucide-react@0.300.0"
+        }
     }
-    setIsPrinting(false);
-  };
+    </script>
 
-  const budgetAllocatedVal = parseFloat(parseNumberInput(formData.budgetAllocated)) || 0;
-  const budgetUsedVal = parseFloat(parseNumberInput(formData.budgetUsed)) || 0;
-  const budgetRemaining = budgetAllocatedVal - budgetUsedVal;
+    <!-- 4. Load Babel for JSX compilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  const calculateAssessmentScore = () => {
-    const scores = Object.values(formData.assessments);
-    const sum = scores.reduce((a, b) => a + b, 0);
-    const avg = sum / scores.length;
-    let level = '';
-    if (avg >= 4.5) level = 'ดีเยี่ยม';
-    else if (avg >= 3.5) level = 'ดีเลิศ';
-    else if (avg >= 2.5) level = 'ดี';
-    else if (avg >= 1.5) level = 'ปานกลาง';
-    else level = 'กำลังพัฒนา';
-    return { avg: avg.toFixed(2), level };
-  };
-
-  const assessmentResult = calculateAssessmentScore();
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
-  };
-
-  const handleAssessmentChange = (key, value) => {
-    setFormData({
-      ...formData,
-      assessments: { ...formData.assessments, [key]: parseInt(value) }
-    });
-  };
-
-  const addIndicator = () => setFormData({...formData, indicators: [...formData.indicators, { id: formData.indicators.length + 1, type: 'quantity', detail: '', method: '', tool: '' }]});
-  const updateIndicator = (index, field, value) => { const newInd = [...formData.indicators]; newInd[index][field] = value; setFormData({ ...formData, indicators: newInd }); };
-  const updateIndicatorResult = (index, field, value) => { const newRes = [...formData.indicatorResults]; newRes[index][field] = value; setFormData({ ...formData, indicatorResults: newRes }); };
-  const updatePDCA = (index, field, value) => { const newPDCA = [...formData.pdca]; newPDCA[index][field] = value; setFormData({ ...formData, pdca: newPDCA }); };
-  const handlePDCABudgetBlur = (index, value) => {
-    const cleanVal = parseNumberInput(value);
-    if (cleanVal && !isNaN(cleanVal)) {
-      updatePDCA(index, 'budget', formatNumber(cleanVal));
-    }
-  };
-  const updateProblem = (index, field, value) => { const newProb = [...formData.problems]; newProb[index][field] = value; setFormData({ ...formData, problems: newProb }); };
-
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData(prev => ({ ...prev, images: [...prev.images, { url: reader.result, caption: '' }] }));
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-  const removeImage = (index) => { const newImages = formData.images.filter((_, i) => i !== index); setFormData({ ...formData, images: newImages }); };
-  const updateImageCaption = (index, value) => { const newImages = [...formData.images]; newImages[index].caption = value; setFormData({ ...formData, images: newImages }); };
-
-  // Calculate if wide reporter column is needed (more than 35 chars or contains "และ")
-  const reporterName = formData.signatures.reporter || formData.responsiblePerson || '';
-  const isWideReporter = reporterName.length > 35 || reporterName.includes('และ') || reporterName.includes(',');
-
-  return (
-    <div className="min-h-screen bg-rose-50 font-sarabun pb-20">
-      <style>
-        {`@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
-          .font-sarabun { font-family: 'Sarabun', sans-serif; }
-          .no-print-element { display: block; }
-          
-          /* Typography Fixes */
-          .thai-fix-text {
-             line-height: 1.8 !important;
-             display: block;
-             padding-top: 2px;
-             padding-bottom: 2px;
-          }
-          .infographic-header-text {
-             line-height: 1.6 !important;
-          }
-          .infographic-body-text {
-             line-height: 1.6 !important;
-          }
-
-          /* Force hide headers/footers when printing directly from main window (backup) */
-          @media print {
-             @page {
+    <style>
+        body {
+            font-family: 'Sarabun', sans-serif;
+            background-color: #fff1f2; /* rose-50 */
+        }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #fb7185; /* rose-400 */
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #f43f5e; /* rose-500 */
+        }
+        
+        /* Print Styles Override */
+        @media print {
+            @page {
+                size: A4;
                 margin: 0;
-                size: auto;
-             }
-             body { margin: 0; }
-          }
-        `}
-      </style>
+            }
+            body {
+                margin: 0;
+                padding: 0;
+                background-color: white;
+            }
+            .no-print-element {
+                display: none !important;
+            }
+            #infographic-content {
+                box-shadow: none !important;
+                margin: 0 !important;
+                width: 100% !important;
+            }
+        }
+        
+        .animate-fadeIn {
+            animation: fadeIn 0.5s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-      {/* --- Success Modal --- */}
-      {showSuccessModal && (
-        <div className="fixed inset-0 bg-black/60 z-[90] flex items-center justify-center p-4 backdrop-blur-sm no-print-element">
-          <div className="bg-white rounded-3xl w-full max-w-sm p-6 text-center border-4 border-green-100">
-            <CheckCircle className="text-green-500 w-16 h-16 mx-auto mb-4" />
-            <h3 className="text-2xl font-bold mb-2">บันทึกสำเร็จเรียบร้อย!</h3>
-            <button onClick={() => setShowSuccessModal(false)} className="w-full py-3 rounded-xl bg-green-500 text-white font-bold">ตกลง</button>
+    <!-- 5. Main Application Script -->
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect } from 'react';
+        import { createRoot } from 'react-dom/client';
+        // Import icons needed - Using UploadCloud
+        import { Camera, Save, Plus, Trash2, FileText, BarChart2, Star, Image as ImageIcon, CheckCircle, ChevronRight, Calculator, Download, Menu, Calendar, User, Briefcase, Tag, Search, X, Loader, Paperclip, UploadCloud, Printer, ArrowUp, ArrowDown, Move } from 'lucide-react';
+
+        // --- Sub-Components ---
+        const SectionTitle = ({ icon, title, subtitle, rightElement }) => (
+          <div className="mb-6 pb-2 border-b border-rose-100 flex justify-between items-end no-print-element">
+            <div>
+              <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                <span className="bg-rose-100 text-rose-600 p-2 rounded-lg">{icon}</span> {title}
+              </h2>
+              {subtitle && <p className="text-sm text-gray-500 mt-1 ml-11">{subtitle}</p>}
+            </div>
+            {rightElement}
           </div>
-        </div>
-      )}
+        );
 
-      {/* --- Search Modal --- */}
-      {showSearchModal && (
-        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm no-print-element">
-          <div className="bg-white rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl">
-             <div className="p-4 bg-rose-50 border-b flex justify-between items-center">
-                <h3 className="font-bold text-rose-600 flex items-center gap-2"><Search size={20}/> ค้นหาข้อมูลเดิม</h3>
-                <button onClick={() => setShowSearchModal(false)}><X size={24}/></button>
-             </div>
-             <div className="p-6">
-                <div className="flex gap-2 mb-4">
-                  <input type="text" placeholder="ชื่อกิจกรรม..." className="flex-1 p-3 border rounded-xl" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-                  <button onClick={fetchGoogleSheetData} className="bg-rose-500 text-white px-6 py-3 rounded-xl">ค้นหา</button>
-                </div>
-                <div className="max-h-[300px] overflow-y-auto">
-                   {searchResults.map((row, idx) => (
-                     <div key={idx} className="p-3 border-b hover:bg-rose-50 cursor-pointer flex justify-between" onClick={() => selectActivity(row)}>
-                        <span>{row[4]}</span>
-                        <span className="text-rose-500 font-bold">เลือก</span>
-                     </div>
-                   ))}
-                </div>
-             </div>
+        const SubHeader = ({ title }) => (
+          <div className="mt-8 mb-4 flex items-center gap-2">
+             <div className="w-1 h-6 bg-rose-400 rounded-full"></div>
+             <h3 className="font-semibold text-gray-700 text-lg">{title}</h3>
           </div>
-        </div>
-      )}
+        );
 
-      <header className="bg-white shadow-sm sticky top-0 z-50 border-b border-rose-100 no-print-element">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-4">
-          <img src="https://i.postimg.cc/0N30mLw5/logo-HDR.png" className="h-10" alt="Logo" />
-          <h1 className="text-lg font-bold text-rose-600">รายงานผลการดำเนินงานกิจกรรม</h1>
-        </div>
-      </header>
-
-      <div className="max-w-7xl mx-auto mt-6 px-4 flex flex-col md:flex-row gap-6">
-        <aside className="w-full md:w-64 no-print-element">
-          <div className="bg-white rounded-2xl shadow-sm border p-4 sticky top-24 space-y-2">
-            {[
-              { id: 1, label: '1. บทนำ', icon: <FileText size={18} /> },
-              { id: 2, label: '2. วิเคราะห์ผล', icon: <BarChart2 size={18} /> },
-              { id: 3, label: '3. แบบประเมิน', icon: <Star size={18} /> },
-              { id: 4, label: '4. รูปภาพ', icon: <ImageIcon size={18} /> },
-              { id: 5, label: '5. อินโฟกราฟฟิก', icon: <CheckCircle size={18} /> },
-            ].map((tab) => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium ${activeTab === tab.id ? 'bg-rose-500 text-white shadow-md' : 'text-gray-600 hover:bg-rose-50'}`}>
-                {tab.icon} {tab.label}
-              </button>
-            ))}
+        const ExpandableField = ({ label, name, value, placeholder, icon, rows = 2, onChange }) => (
+          <div className="mb-6 bg-white p-4 rounded-xl shadow-sm border border-rose-50 hover:border-rose-200 transition-colors">
+            <label className="flex items-center gap-2 text-sm font-bold text-rose-600 mb-2">
+              {icon && <span className="opacity-70">{icon}</span>} {label}
+            </label>
+            <textarea
+              name={name}
+              value={value}
+              onChange={onChange}
+              rows={rows}
+              className="w-full p-3 rounded-lg border border-gray-200 focus:border-rose-400 focus:ring-2 focus:ring-rose-100 outline-none transition-all text-gray-700 resize-y"
+              placeholder={placeholder}
+            />
           </div>
-        </aside>
+        );
 
-        <main className="flex-grow">
-          <div className="bg-white/80 backdrop-blur-sm rounded-3xl p-6 md:p-8 shadow-xl border border-white">
+        // --- Helper Functions ---
+        const splitTextToLi = (text) => {
+          if (!text) return null;
+          return text.split('\n').filter(line => line.trim() !== '').map((line, i) => (
+            <li key={i} className="mb-1 flex items-start gap-2 break-words text-left">
+              <span className="mt-1.5 w-1.5 h-1.5 bg-rose-400 rounded-full flex-shrink-0"></span>
+              <span className="break-words w-full thai-fix-text" style={{ lineHeight: '1.6' }}>{line}</span>
+            </li>
+          ));
+        };
+
+        const getStatusLabel = (val) => {
+          const map = {
+            'completed': '✅ ดำเนินการเสร็จสิ้น',
+            'in-progress': '⏳ ยังไม่เสร็จสิ้น',
+            'not-started': '❌ ยังไม่ได้ดำเนินการ'
+          };
+          return map[val] || '-';
+        };
+
+        const getFutureLabel = (val) => {
+           const map = {
+            'continue': 'พัฒนาต่อเนื่อง',
+            'improve': 'ปรับปรุง',
+            'discontinue': 'ไม่ควรดำเนินการต่อ'
+          };
+          return map[val] || val;
+        }
+
+        // --- Main Component ---
+        const ActivityReportApp = () => {
+          // --- State Management ---
+          const [activeTab, setActiveTab] = useState(1);
+          const [showSearchModal, setShowSearchModal] = useState(false);
+          const [showSuccessModal, setShowSuccessModal] = useState(false);
+          const [searchTerm, setSearchTerm] = useState('');
+          const [searchResults, setSearchResults] = useState([]);
+          const [isLoading, setIsLoading] = useState(false);
+          const [isSaving, setIsSaving] = useState(false);
+          const [isPrinting, setIsPrinting] = useState(false);
+
+          // Script URL for Google Apps Script
+          const scriptUrl = 'https://script.google.com/macros/s/AKfycbyxZ27sVENnA_mCuUHhHzVhzGwuz1NlMcr32bDuRVXxjpS4OZLECXEjTE6tTkB4st7GIg/exec';
+
+          // Initial State
+          const [formData, setFormData] = useState({
+            activityCode: '',
+            activityName: '',
+            project: '',
+            workGroup: '',
+            responsiblePerson: '',
+            activityType: 'new',
+            objectives: '',
+            budgetSource: '',
+            budgetAllocated: '',
+            expectedOutcome: '',
+            indicators: [
+              { id: 1, type: 'quantity', detail: '', method: '', tool: '' }
+            ],
+            pdca: [
+              { step: 'ขั้นการวางแผน (P)', operation: '', duration: '', budget: '', responsible: '' },
+              { step: 'ขั้นปฏิบัติ (D)', operation: '', duration: '', budget: '', responsible: '' },
+              { step: 'ขั้นตรวจสอบ (C)', operation: '', duration: '', budget: '', responsible: '' },
+              { step: 'ขั้นปรับปรุง (A)', operation: '', duration: '', budget: '', responsible: '' },
+            ],
+            budgetUsed: '',
+            activityStatus: 'completed',
+            indicatorResults: [],
+            futureOperation: 'continue',
+            problems: [
+              { type: 'ด้านบุคลากร', problem: '', solution: '' },
+              { type: 'ด้านงบประมาณ', problem: '', solution: '' },
+              { type: 'ด้านวัสดุอุปกรณ์', problem: '', solution: '' },
+              { type: 'ด้านประสานงานและบริการ', problem: '', solution: '' },
+            ],
+            resultsReceived: '',
+            signatures: {
+              reporter: '',
+              deputy: 'นางสาวนราพร  ตาคำแสง',
+              director: 'นางภักดิ์ศรินญา คมน์สุทธิแสน'
+            },
+            assessments: {
+              part1_1: 5, part1_2: 5, part1_3: 5, part1_4: 5, part1_5: 5,
+              part2_1: 5, part2_2: 5, part2_3: 5, part2_4: 5,
+              part3_1: 5, part3_2: 5, part3_3: 5
+            },
+            images: [], 
+          });
+
+          // --- Sync Logic ---
+          useEffect(() => {
+            const newResults = formData.indicators.map((ind, index) => {
+              const existing = formData.indicatorResults[index];
+              return {
+                id: ind.id,
+                detail: ind.detail,
+                target: existing?.target || '',
+                result: existing?.result || '',
+                assessment: existing?.assessment || 'achieved'
+              };
+            });
+            setFormData(prev => ({ ...prev, indicatorResults: newResults }));
+          }, [formData.indicators]);
+
+          useEffect(() => {
+            setFormData(prev => ({
+              ...prev,
+              signatures: { ...prev.signatures, reporter: prev.responsiblePerson }
+            }));
+          }, [formData.responsiblePerson]);
+
+          // --- Utils ---
+          const formatNumber = (num) => {
+            if (num === '' || num === null || num === undefined || isNaN(num)) return '0.00';
+            return Number(num).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          };
+
+          const parseNumberInput = (val) => {
+            if (!val) return '';
+            return val.replace(/,/g, '');
+          };
+
+          const handleNumberBlur = (e) => {
+            const { name, value } = e.target;
+            const cleanVal = parseNumberInput(value);
+            if (cleanVal && !isNaN(cleanVal)) {
+              setFormData({ ...formData, [name]: formatNumber(cleanVal) });
+            }
+          };
+
+          const handleNumberFocus = (e) => {
+            const { name, value } = e.target;
+            const cleanVal = parseNumberInput(value);
+            setFormData({ ...formData, [name]: cleanVal });
+          };
+
+          // --- Google Sheets Logic ---
+          const fetchGoogleSheetData = async () => {
+            setIsLoading(true);
+            const SHEET_ID = '1PnBadpG0nDIi4SKwGlZkiOOtJBGLZyOlVVlTThKTxkg';
+            const SHEET_NAME = 'กิจกรรม';
+            const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
+
+            try {
+              const response = await fetch(url);
+              const data = await response.text();
+              const rows = parseCSV(data);
+              const filtered = rows.filter(row => {
+                const name = row[4] || ''; 
+                const person = row[5] || ''; 
+                const term = searchTerm.toLowerCase();
+                return name.toLowerCase().includes(term) || person.toLowerCase().includes(term);
+              });
+              setSearchResults(filtered);
+            } catch (error) {
+              console.error("Error fetching sheet:", error);
+            } finally {
+              setIsLoading(false);
+            }
+          };
+
+          const parseCSV = (str) => {
+            const rows = [];
+            let currentRow = [];
+            let currentCell = '';
+            let inQuotes = false;
+            for (let i = 0; i < str.length; i++) {
+              const char = str[i];
+              if (char === '"') inQuotes = !inQuotes;
+              else if (char === ',' && !inQuotes) { currentRow.push(currentCell); currentCell = ''; }
+              else if (char === '\n' && !inQuotes) { currentRow.push(currentCell); rows.push(currentRow); currentRow = []; currentCell = ''; }
+              else currentCell += char;
+            }
+            return rows.slice(1);
+          };
+
+          const selectActivity = (row) => {
+            setFormData(prev => ({
+              ...prev,
+              activityCode: row[0]?.replace(/"/g, '') || '',
+              workGroup: row[1]?.replace(/"/g, '') || '',
+              project: row[3]?.replace(/"/g, '') || '',
+              activityName: row[4]?.replace(/"/g, '') || '',
+              responsiblePerson: row[5]?.replace(/"/g, '') || '',
+              budgetSource: row[6]?.replace(/"/g, '') || '',
+              budgetAllocated: formatNumber(parseNumberInput(row[8]?.replace(/"/g, '') || '0')),
+              budgetUsed: formatNumber(parseNumberInput(row[9]?.replace(/"/g, '') || '0')),
+            }));
+            setShowSearchModal(false);
+          };
+
+          const handleSaveToCloud = async () => {
+            setIsSaving(true);
+            const payload = {
+              ...formData,
+              budgetRemaining: (parseFloat(parseNumberInput(formData.budgetAllocated)) - parseFloat(parseNumberInput(formData.budgetUsed))),
+              assessmentResult: calculateAssessmentScore(),
+              timestamp: new Date().toISOString()
+            };
+            try {
+              await fetch(scriptUrl, { method: 'POST', mode: 'no-cors', body: JSON.stringify(payload) });
+              setShowSuccessModal(true);
+            } catch (error) {
+              alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
+            } finally {
+              setIsSaving(false);
+            }
+          };
+
+          // --- NATIVE PRINT VIA POPUP WINDOW (Robust Solution) ---
+          const handlePrintWindow = () => {
+            setIsPrinting(true);
+            const content = document.getElementById('infographic-content');
             
-            {/* ... [Tab 1-4 Content] ... */}
-            {activeTab === 1 && (
-              <div className="animate-fadeIn no-print-element">
-                <SectionTitle icon="📌" title="ส่วนที่ 1: ข้อมูลทั่วไป" rightElement={<button onClick={() => setShowSearchModal(true)} className="text-xs bg-rose-100 text-rose-600 px-3 py-1.5 rounded-lg font-bold">ดึงข้อมูลเก่า</button>} />
-                <div className="space-y-2">
-                  <ExpandableField icon={<Tag size={16}/>} label="รหัสกิจกรรม" name="activityCode" value={formData.activityCode} onChange={handleInputChange} rows={1} />
-                  <ExpandableField icon={<FileText size={16}/>} label="ชื่อกิจกรรม" name="activityName" value={formData.activityName} onChange={handleInputChange} rows={2} />
-                  <ExpandableField icon={<Briefcase size={16}/>} label="ภายใต้โครงการ" name="project" value={formData.project} onChange={handleInputChange} rows={2} />
-                  <ExpandableField icon={<User size={16}/>} label="กลุ่มงาน" name="workGroup" value={formData.workGroup} onChange={handleInputChange} rows={1} />
-                  <ExpandableField icon={<User size={16}/>} label="ผู้รับผิดชอบ" name="responsiblePerson" value={formData.responsiblePerson} onChange={handleInputChange} rows={1} />
-                  <div className="mb-6 bg-white p-4 rounded-xl shadow-sm border border-rose-50">
-                    <label className="flex items-center gap-2 text-sm font-bold text-rose-600 mb-3"><Calendar size={16} className="opacity-70"/> ลักษณะกิจกรรม</label>
-                    <div className="flex flex-col sm:flex-row gap-4">
-                      <label className="flex items-center gap-3 cursor-pointer bg-rose-50 p-3 rounded-lg flex-1 border border-rose-100"><input type="radio" name="activityType" value="new" checked={formData.activityType === 'new'} onChange={handleInputChange} className="accent-rose-500 w-5 h-5" /><span>✨ กิจกรรมใหม่</span></label>
-                      <label className="flex items-center gap-3 cursor-pointer bg-rose-50 p-3 rounded-lg flex-1 border border-rose-100"><input type="radio" name="activityType" value="continuous" checked={formData.activityType === 'continuous'} onChange={handleInputChange} className="accent-rose-500 w-5 h-5" /><span>🔄 กิจกรรมต่อเนื่อง</span></label>
-                    </div>
+            if (content) {
+              // Create a new window
+              const printWindow = window.open('', '_blank', 'width=900,height=800');
+              
+              if (printWindow) {
+                // Construct the full HTML for the print window
+                // FIX: Escape script tags to prevent premature closing of the main script
+                printWindow.document.write(`
+                  <html>
+                    <head>
+                      <title>${formData.activityName || 'Activity Report'}</title>
+                      <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+                      <script src="https://cdn.tailwindcss.com"><\/script>
+                      <style>
+                        /* Forces hide header/footer in print */
+                        @page {
+                           size: A4;
+                           margin: 5mm;
+                        }
+                        body { 
+                          font-family: 'Sarabun', sans-serif; 
+                          margin: 0; 
+                          padding: 0;
+                          background-color: white;
+                        }
+                        #print-container {
+                           background: white;
+                           width: 100%;
+                           min-height: 297mm;
+                           margin: 0 auto;
+                           box-shadow: none;
+                        }
+                        * {
+                          -webkit-print-color-adjust: exact !important;
+                          print-color-adjust: exact !important;
+                        }
+                        .thai-fix-text {
+                           line-height: 1.8 !important;
+                           display: block;
+                        }
+                      </style>
+                    </head>
+                    <body>
+                      <div id="print-container">
+                        ${content.innerHTML}
+                      </div>
+                      <script>
+                        window.onload = function() {
+                           setTimeout(function() {
+                              window.print();
+                           }, 1500);
+                        };
+                      <\/script>
+                    </body>
+                  </html>
+                `);
+                printWindow.document.close();
+                printWindow.focus();
+              } else {
+                alert("กรุณาอนุญาต Pop-up (Pop-up Blocked) เพื่อใช้งานฟังก์ชั่นพิมพ์");
+              }
+            }
+            setIsPrinting(false);
+          };
+
+          const budgetAllocatedVal = parseFloat(parseNumberInput(formData.budgetAllocated)) || 0;
+          const budgetUsedVal = parseFloat(parseNumberInput(formData.budgetUsed)) || 0;
+          const budgetRemaining = budgetAllocatedVal - budgetUsedVal;
+
+          const calculateAssessmentScore = () => {
+            const scores = Object.values(formData.assessments);
+            const sum = scores.reduce((a, b) => a + b, 0);
+            const avg = sum / scores.length;
+            let level = '';
+            if (avg >= 4.5) level = 'ดีเยี่ยม';
+            else if (avg >= 3.5) level = 'ดีเลิศ';
+            else if (avg >= 2.5) level = 'ดี';
+            else if (avg >= 1.5) level = 'ปานกลาง';
+            else level = 'กำลังพัฒนา';
+            return { avg: avg.toFixed(2), level };
+          };
+
+          const assessmentResult = calculateAssessmentScore();
+
+          const handleInputChange = (e) => {
+            const { name, value } = e.target;
+            setFormData({ ...formData, [name]: value });
+          };
+
+          const handleAssessmentChange = (key, value) => {
+            setFormData({
+              ...formData,
+              assessments: { ...formData.assessments, [key]: parseInt(value) }
+            });
+          };
+
+          const addIndicator = () => setFormData({...formData, indicators: [...formData.indicators, { id: formData.indicators.length + 1, type: 'quantity', detail: '', method: '', tool: '' }]});
+          const updateIndicator = (index, field, value) => { const newInd = [...formData.indicators]; newInd[index][field] = value; setFormData({ ...formData, indicators: newInd }); };
+          const updateIndicatorResult = (index, field, value) => { const newRes = [...formData.indicatorResults]; newRes[index][field] = value; setFormData({ ...formData, indicatorResults: newRes }); };
+          const updatePDCA = (index, field, value) => { const newPDCA = [...formData.pdca]; newPDCA[index][field] = value; setFormData({ ...formData, pdca: newPDCA }); };
+          const handlePDCABudgetBlur = (index, value) => {
+            const cleanVal = parseNumberInput(value);
+            if (cleanVal && !isNaN(cleanVal)) {
+              updatePDCA(index, 'budget', formatNumber(cleanVal));
+            }
+          };
+          const updateProblem = (index, field, value) => { const newProb = [...formData.problems]; newProb[index][field] = value; setFormData({ ...formData, problems: newProb }); };
+
+          const handleImageUpload = (e) => {
+            const file = e.target.files[0];
+            if (file) {
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                setFormData(prev => ({ ...prev, images: [...prev.images, { url: reader.result, caption: '' }] }));
+              };
+              reader.readAsDataURL(file);
+            }
+          };
+          const removeImage = (index) => { const newImages = formData.images.filter((_, i) => i !== index); setFormData({ ...formData, images: newImages }); };
+          const updateImageCaption = (index, value) => { const newImages = [...formData.images]; newImages[index].caption = value; setFormData({ ...formData, images: newImages }); };
+
+          // Calculate if wide reporter column is needed (more than 35 chars or contains "และ")
+          const reporterName = formData.signatures.reporter || formData.responsiblePerson || '';
+          const isWideReporter = reporterName.length > 35 || reporterName.includes('และ') || reporterName.includes(',');
+
+          return (
+            <div className="min-h-screen font-sarabun pb-20">
+              {/* --- Success Modal --- */}
+              {showSuccessModal && (
+                <div className="fixed inset-0 bg-black/60 z-[90] flex items-center justify-center p-4 backdrop-blur-sm no-print-element">
+                  <div className="bg-white rounded-3xl w-full max-w-sm p-6 text-center border-4 border-green-100">
+                    <CheckCircle className="text-green-500 w-16 h-16 mx-auto mb-4" />
+                    <h3 className="text-2xl font-bold mb-2">บันทึกสำเร็จเรียบร้อย!</h3>
+                    <button onClick={() => setShowSuccessModal(false)} className="w-full py-3 rounded-xl bg-green-500 text-white font-bold">ตกลง</button>
                   </div>
                 </div>
-                <ExpandableField label="1.1 วัตถุประสงค์" name="objectives" value={formData.objectives} onChange={handleInputChange} rows={4} />
-                <div className="mt-8 bg-white p-6 rounded-2xl border border-rose-100 shadow-sm">
-                  <h3 className="font-bold text-rose-600 mb-4 text-lg">1.2 เป้าหมายและตัวชี้วัด 🎯</h3>
-                  <div className="overflow-x-auto bg-rose-50/50 rounded-xl p-4">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-gray-600 border-b border-rose-200">
-                          <th className="pb-3 w-10 text-center">ที่</th>
-                          <th className="pb-3 w-32">ประเภท</th><th className="pb-3">ตัวชี้วัด/เป้าหมาย</th><th className="pb-3 w-48">วิธีการประเมิน</th><th className="pb-3 w-48">เครื่องมือ</th><th className="pb-3 w-10"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-rose-100">
-                        {formData.indicators.map((ind, idx) => (
-                          <tr key={idx} className="group hover:bg-white transition-colors">
-                            <td className="py-3 text-center align-top">{idx + 1}</td>
-                            <td className="py-2 pr-2 align-top"><select className="w-full p-2 rounded-lg border" value={ind.type} onChange={(e) => updateIndicator(idx, 'type', e.target.value)}><option value="quantity">เชิงปริมาณ</option><option value="quality">เชิงคุณภาพ</option></select></td>
-                            <td className="py-2 pr-2 align-top"><textarea className="w-full p-2 rounded-lg border" rows="2" value={ind.detail} onChange={(e) => updateIndicator(idx, 'detail', e.target.value)} /></td>
-                            <td className="py-2 pr-2 align-top"><textarea className="w-full p-2 rounded-lg border" rows="2" value={ind.method} onChange={(e) => updateIndicator(idx, 'method', e.target.value)} /></td>
-                            <td className="py-2 pr-2 align-top"><textarea className="w-full p-2 rounded-lg border" rows="2" value={ind.tool} onChange={(e) => updateIndicator(idx, 'tool', e.target.value)} /></td>
-                            <td className="py-2 text-center align-top"><button onClick={() => {const newInd = formData.indicators.filter((_, i) => i !== idx); setFormData({...formData, indicators: newInd});}} className="text-rose-300 hover:text-red-500"><Trash2 size={16} /></button></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    <button onClick={addIndicator} className="mt-4 w-full border-2 border-dashed border-rose-300 text-rose-500 font-medium hover:bg-rose-50 px-4 py-3 rounded-xl transition-colors flex justify-center items-center gap-2"><Plus size={18} /> เพิ่มรายการ</button>
-                  </div>
-                </div>
-                <div className="mt-6"><ExpandableField label="1.3 แหล่งงบประมาณ" name="budgetSource" value={formData.budgetSource} onChange={handleInputChange} rows={2} /></div>
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-rose-50"><label className="block text-sm font-bold text-rose-600 mb-2">1.4 งบประมาณที่จัดสรร (บาท)</label><input type="text" name="budgetAllocated" value={formData.budgetAllocated} onChange={handleInputChange} onBlur={handleNumberBlur} onFocus={handleNumberFocus} placeholder="0.00" className="w-full p-3 text-xl font-bold text-rose-600 rounded-lg border border-gray-200" /></div>
-                <div className="mt-8 bg-white p-6 rounded-2xl border border-rose-100 shadow-sm">
-                   <h3 className="font-bold text-rose-600 mb-4 text-lg">1.5 ขั้นตอนการดำเนินงาน (PDCA) 🔄</h3>
-                   <div className="overflow-x-auto rounded-xl border border-rose-100">
-                     <table className="w-full text-sm text-left">
-                       <thead className="bg-rose-50 text-gray-600 font-medium"><tr><th className="p-4 w-32">ขั้นตอน</th><th className="p-4">การดำเนินงาน</th><th className="p-4 w-40">ระยะเวลา</th><th className="p-4 w-32 text-right">งบประมาณ</th><th className="p-4 w-40">ผู้รับผิดชอบ</th></tr></thead>
-                       <tbody className="divide-y divide-rose-50">{formData.pdca.map((row, idx) => (<tr key={idx}><td className="p-4 font-bold text-rose-500 align-top">{row.step}</td><td className="p-4 align-top"><textarea rows="2" className="w-full border rounded-lg p-2" value={row.operation} onChange={(e) => updatePDCA(idx, 'operation', e.target.value)} /></td><td className="p-4 align-top"><textarea rows="2" className="w-full border rounded-lg p-2" value={row.duration} onChange={(e) => updatePDCA(idx, 'duration', e.target.value)} /></td><td className="p-4 align-top"><input type="text" className="w-full border-b text-right" value={row.budget} onChange={(e) => updatePDCA(idx, 'budget', e.target.value)} onBlur={(e) => handlePDCABudgetBlur(idx, e.target.value)} /></td><td className="p-4 align-top"><textarea rows="2" className="w-full border rounded-lg p-2" value={row.responsible} onChange={(e) => updatePDCA(idx, 'responsible', e.target.value)} /></td></tr>))}</tbody>
-                     </table>
-                   </div>
-                </div>
-                <div className="mt-6"><ExpandableField label="1.6 ผลที่คาดว่าจะได้รับ" name="expectedOutcome" value={formData.expectedOutcome} onChange={handleInputChange} rows={4} /></div>
-              </div>
-            )}
+              )}
 
-            {activeTab === 2 && (
-              <div className="animate-fadeIn no-print-element">
-                 <SectionTitle icon="📊" title="ส่วนที่ 2: วิเคราะห์และประเมิน" />
-                 <SubHeader title="2.1 สรุปงบประมาณ" />
-                 <div className="bg-gradient-to-br from-rose-50 to-white p-6 rounded-2xl mb-8 border border-rose-100 shadow-sm">
-                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <div className="bg-white p-5 rounded-xl shadow-sm border border-rose-100 flex flex-col justify-center items-center"><p className="text-sm text-gray-500 mb-1">งบที่จัดสรร</p><p className="text-2xl font-bold text-gray-800">{formData.budgetAllocated || '0.00'}</p></div>
-                      <div className="bg-white p-5 rounded-xl shadow-sm border border-rose-100 flex flex-col justify-center items-center"><p className="text-sm text-gray-500 mb-1">งบที่ใช้จริง</p><input type="text" name="budgetUsed" value={formData.budgetUsed} onChange={handleInputChange} onBlur={handleNumberBlur} onFocus={handleNumberFocus} className="text-2xl font-bold text-rose-600 outline-none text-center w-full bg-transparent border-b border-dashed" placeholder="0.00"/></div>
-                      <div className={`p-5 rounded-xl shadow-sm border flex flex-col justify-center items-center ${budgetRemaining < 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}><p className="text-sm text-gray-600 mb-1">คงเหลือ</p><p className={`text-2xl font-bold ${budgetRemaining < 0 ? 'text-red-600' : 'text-green-600'}`}>{formatNumber(budgetRemaining)}</p></div>
-                   </div>
-                 </div>
-                 <SubHeader title="2.2 สถานะการดำเนินงาน" />
-                 <div className="mb-8 p-4 bg-white rounded-xl shadow-sm border border-gray-100"><div className="flex flex-wrap gap-4">{['completed:ดำเนินการเสร็จสิ้น ✅', 'in-progress:ยังไม่เสร็จสิ้น ⏳', 'not-started:ยังไม่ได้ดำเนินการ ❌'].map((status) => {const [val, label] = status.split(':'); return (<button key={val} onClick={() => setFormData({...formData, activityStatus: val})} className={`flex-1 py-4 px-6 rounded-xl border-2 text-sm font-bold ${formData.activityStatus === val ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-gray-400 border-gray-100'}`}>{label}</button>);})}</div></div>
-                 <SubHeader title="2.3 ผลสัมฤทธิ์ตามตัวชี้วัด" />
-                 <div className="mb-8 bg-white p-2 rounded-xl border border-rose-100 shadow-sm"><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-rose-50 text-gray-600"><tr><th className="p-4 text-left w-1/4">ตัวชี้วัด</th><th className="p-4 text-left w-1/4">เป้าหมาย</th><th className="p-4 text-left w-1/4">ผลการดำเนินงาน</th><th className="p-4 text-left w-1/4">การประเมิน</th></tr></thead><tbody className="divide-y divide-rose-50">{formData.indicatorResults.map((row, idx) => (<tr key={idx}><td className="p-4 text-gray-700 font-medium align-top">{row.detail}</td><td className="p-4 align-top"><textarea rows="3" className="w-full border rounded-lg p-2" value={row.target} onChange={(e) => updateIndicatorResult(idx, 'target', e.target.value)} /></td><td className="p-4 align-top"><textarea rows="3" className="w-full border rounded-lg p-2" value={row.result} onChange={(e) => updateIndicatorResult(idx, 'result', e.target.value)} /></td><td className="p-4 align-top"><select className={`w-full border rounded-lg p-2 text-xs font-bold ${row.assessment === 'achieved' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`} value={row.assessment} onChange={(e) => updateIndicatorResult(idx, 'assessment', e.target.value)}><option value="achieved">บรรลุเป้าหมาย</option><option value="not-achieved">ไม่บรรลุ</option></select></td></tr>))}</tbody></table></div></div>
-                 <div className="mb-8"><SubHeader title="2.4 การดำเนินงานในอนาคต" /><select value={formData.futureOperation} onChange={(e) => setFormData({...formData, futureOperation: e.target.value})} className="w-full p-4 rounded-xl border border-rose-200 bg-white text-lg font-medium"><option value="continue">🔵 พัฒนาต่อเนื่อง</option><option value="improve">🟡 ปรับปรุง</option><option value="discontinue">🔴 ไม่ควรดำเนินการต่อ</option></select></div>
-                 <div className="mb-8"><SubHeader title="2.5 ปัญหาและข้อเสนอแนะ" /><div className="grid grid-cols-1 gap-6">{formData.problems.map((prob, idx) => (<div key={idx} className="bg-white border border-rose-100 rounded-2xl p-6 shadow-sm"><div className="flex items-center gap-2 mb-4 border-b border-rose-50 pb-2"><h4 className="text-gray-700 font-bold text-base">{prob.type}</h4></div><div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div><label className="text-xs font-bold text-gray-400 block mb-2">ปัญหา</label><textarea rows="3" className="w-full p-3 bg-red-50 border border-red-100 rounded-xl text-sm" value={prob.problem} onChange={(e) => updateProblem(idx, 'problem', e.target.value)} /></div><div><label className="text-xs font-bold text-gray-400 block mb-2">แนวทางแก้ไข</label><textarea rows="3" className="w-full p-3 bg-green-50 border border-green-100 rounded-xl text-sm" value={prob.solution} onChange={(e) => updateProblem(idx, 'solution', e.target.value)} /></div></div></div>))}</div></div>
-                 <div className="mb-8"><SubHeader title="2.6 ผลที่ได้รับ" /><ExpandableField label="ผลที่ได้รับจากการดำเนินงาน" name="resultsReceived" value={formData.resultsReceived} onChange={(e) => setFormData({...formData, resultsReceived: e.target.value})} rows={4} /></div>
-                 
-                 {/* Signatures Section in Tab 2 */}
-                 <div className="mt-8 bg-white p-6 rounded-2xl border border-rose-100 shadow-sm">
-                   <SectionTitle icon="✍️" title="การรับรองรายงาน" />
-                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                     {/* Reporter */}
-                     <div>
-                       <label className="block text-sm font-bold text-gray-700 mb-2">ผู้รายงาน</label>
-                       <input 
-                         type="text" 
-                         value={formData.signatures.reporter || formData.responsiblePerson} 
-                         readOnly 
-                         className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-500 cursor-not-allowed"
-                       />
-                       <p className="text-xs text-gray-400 mt-1">*ดึงข้อมูลจากผู้รับผิดชอบ</p>
+              {/* --- Search Modal --- */}
+              {showSearchModal && (
+                <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm no-print-element">
+                  <div className="bg-white rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl">
+                     <div className="p-4 bg-rose-50 border-b flex justify-between items-center">
+                        <h3 className="font-bold text-rose-600 flex items-center gap-2"><Search size={20}/> ค้นหาข้อมูลเดิม</h3>
+                        <button onClick={() => setShowSearchModal(false)}><X size={24}/></button>
                      </div>
-
-                     {/* Deputy */}
-                     <div>
-                       <label className="block text-sm font-bold text-gray-700 mb-2">รองผู้อำนวยการ</label>
-                       <select 
-                         value={formData.signatures.deputy} 
-                         onChange={(e) => setFormData({...formData, signatures: {...formData.signatures, deputy: e.target.value}})}
-                         className="w-full p-3 border border-gray-200 rounded-xl focus:border-rose-400 outline-none bg-white"
-                       >
-                         <option value="นางสาวนราพร  ตาคำแสง">นางสาวนราพร  ตาคำแสง</option>
-                         <option value="นายกานต์นิธิ  กิจมี">นายกานต์นิธิ  กิจมี</option>
-                         <option value="นายวีระพันธ์  วงศ์สุวรรณ">นายวีระพันธ์  วงศ์สุวรรณ</option>
-                       </select>
-                     </div>
-
-                     {/* Director */}
-                     <div>
-                       <label className="block text-sm font-bold text-gray-700 mb-2">ผู้อำนวยการ</label>
-                       <input 
-                         type="text" 
-                         value={formData.signatures.director} 
-                         onChange={(e) => setFormData({...formData, signatures: {...formData.signatures, director: e.target.value}})}
-                         className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl"
-                       />
-                     </div>
-                   </div>
-                 </div>
-              </div>
-            )}
-
-            {activeTab === 3 && (
-              <div className="animate-fadeIn no-print-element">
-                 <SectionTitle icon="⭐" title="ส่วนที่ 3: แบบประเมินกิจกรรม" />
-                 <div className="space-y-8 pb-20">{[{title: '1. ด้านทรัพยากรที่ใช้', questions: [{ key: 'part1_1', text: '1.1 ความเหมาะสมของงบประมาณ' }, { key: 'part1_2', text: '1.2 ความเหมาะสมของกิจกรรม' }, { key: 'part1_3', text: '1.3 ความร่วมมือของบุคลากร' }, { key: 'part1_4', text: '1.4 ความเพียงพอของวัสดุอุปกรณ์' }, { key: 'part1_5', text: '1.5 ความเหมาะสมของสถานที่' }]}, {title: '2. ด้านกระบวนการดำเนินงาน', questions: [{ key: 'part2_1', text: '2.1 ดำเนินงานตามขั้นตอน' }, { key: 'part2_2', text: '2.2 ความเหมาะสมของขั้นตอน' }, { key: 'part2_3', text: '2.3 ส่งผลตามวัตถุประสงค์' }, { key: 'part2_4', text: '2.4 การมีส่วนร่วม' }]}, {title: '3. ด้านผลการดำเนินงาน', questions: [{ key: 'part3_1', text: '3.1 ผลเป็นไปตามวัตถุประสงค์' }, { key: 'part3_2', text: '3.2 ผลเป็นไปตามเป้าหมาย' }, { key: 'part3_3', text: '3.3 ผลเป็นไปตามตัวชี้วัด' }]}].map((section, sIdx) => (<div key={sIdx} className="bg-white rounded-2xl border border-rose-100 overflow-hidden shadow-sm"><div className="bg-rose-50/50 p-4 border-b border-rose-100"><h3 className="font-bold text-rose-600">{section.title}</h3></div><div className="divide-y divide-gray-50">{section.questions.map((q) => (<div key={q.key} className="p-4 flex flex-col md:flex-row md:items-center justify-between hover:bg-gray-50"><p className="text-gray-700 text-sm md:w-2/3 mb-3 md:mb-0 font-medium">{q.text}</p><div className="flex gap-2 justify-end">{[1, 2, 3, 4, 5].map((score) => (<button key={score} onClick={() => handleAssessmentChange(q.key, score)} className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold border ${formData.assessments[q.key] === score ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-gray-400 border-gray-200'}`}>{score}</button>))}</div></div>))}</div></div>))}</div>
-                 
-                 {/* Live Score Summary for Tab 3 */}
-                 <div className="fixed bottom-6 right-6 z-40 bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-xl border border-rose-200 flex items-center gap-6 animate-slideUp">
-                    <div>
-                      <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">ผลการประเมินเฉลี่ย</h4>
-                      <p className="text-xs text-rose-400">จาก 12 ข้อคำถาม</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                       <span className="text-4xl font-bold text-rose-600">{assessmentResult.avg}</span>
-                       <div className="flex flex-col items-start">
-                          <span className="px-2 py-0.5 bg-rose-100 text-rose-700 text-xs font-bold rounded-md mb-1">{assessmentResult.level}</span>
-                          <span className="text-[10px] text-gray-400">ระดับคุณภาพ</span>
-                       </div>
-                    </div>
-                 </div>
-              </div>
-            )}
-
-            {activeTab === 4 && (
-              <div className="animate-fadeIn no-print-element text-center py-10">
-                <SectionTitle icon="📸" title="ส่วนที่ 4: รูปภาพกิจกรรม" />
-                <label className="bg-rose-500 text-white px-6 py-3 rounded-xl cursor-pointer inline-flex items-center gap-2"><Camera size={20} /> อัพโหลดรูปภาพ<input type="file" className="hidden" onChange={handleImageUpload} /></label>
-                <div className="grid grid-cols-2 gap-4 mt-8">{formData.images.map((img, i) => (<div key={i} className="relative group bg-white p-2 rounded-xl border"><img src={img.url} className="w-full aspect-video object-cover rounded-lg" alt="Report" /><input type="text" placeholder="คำบรรยาย..." className="w-full mt-2 text-center text-sm border-b focus:border-rose-500 outline-none" value={img.caption || ''} onChange={(e) => updateImageCaption(i, e.target.value)} /><button onClick={() => removeImage(i)} className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-full"><Trash2 size={16}/></button></div>))}</div>
-              </div>
-            )}
-
-            {activeTab === 5 && (
-              <div className="animate-fadeIn">
-                <div className="flex justify-between items-center mb-6 no-print-element flex-wrap gap-2">
-                   <SectionTitle icon="📑" title="สรุปรายงาน (Infographic)" />
-                   <div className="flex gap-2">
-                     <button 
-                      onClick={handlePrintWindow}
-                      disabled={isPrinting}
-                      className="flex items-center gap-2 bg-green-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium hover:bg-green-700 shadow-lg"
-                      title="เปิดหน้าต่างใหม่เพื่อสั่งพิมพ์"
-                     >
-                       {isPrinting ? <Loader className="animate-spin" size={16} /> : <Printer size={16} />}
-                       พิมพ์
-                     </button>
-                     <button 
-                      onClick={handleSaveToCloud}
-                      disabled={isSaving}
-                      className="flex items-center gap-2 bg-rose-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium hover:bg-rose-700 shadow-lg"
-                     >
-                       {isSaving ? <Loader className="animate-spin" size={16}/> : <CloudUpload size={16} />} 
-                       บันทึกรายงาน
-                     </button>
-                   </div>
-                </div>
-
-                {/* Infographic Container */}
-                <div 
-                  id="infographic-content" 
-                  className="bg-white mx-auto shadow-2xl overflow-hidden print-area flex flex-col font-sarabun" 
-                  style={{ width: '210mm', minHeight: 'auto', paddingBottom: '20px' }} 
-                >
-                  
-                  {/* Updated Header (Red Box) */}
-                  <div className="bg-rose-600 text-white p-5 relative flex-shrink-0">
-                    <div className="relative z-10 flex items-center gap-4">
-                      {/* Logo Left */}
-                      <img src="https://i.postimg.cc/0N30mLw5/logo-HDR.png" className="h-16 w-auto bg-white rounded-lg p-1" alt="Logo" />
-                      
-                      <div className="flex-1">
-                        {/* Activity Name - Fix line height for Thai vowels */}
-                        <h1 className="text-xl font-bold mb-2 leading-tight break-words thai-fix-text" style={{ lineHeight: '1.8' }}>{formData.activityName || 'ชื่อกิจกรรม (Activity Name)'}</h1>
-                        
-                        {/* Row for Code/Group (Left) and Year (Right) */}
-                        <div className="flex justify-between items-end border-t border-rose-400/50 pt-2">
-                           <span className="text-sm font-medium bg-white/20 px-2 py-0.5 rounded backdrop-blur-sm">
-                             {formData.activityCode || 'CODE-XXXX'} | {formData.workGroup || 'กลุ่มงาน...'}
-                           </span>
-                           <span className="text-sm text-rose-100 font-bold">ปีการศึกษา 2568</span>
+                     <div className="p-6">
+                        <div className="flex gap-2 mb-4">
+                          <input type="text" placeholder="ชื่อกิจกรรม..." className="flex-1 p-3 border rounded-xl" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                          <button onClick={fetchGoogleSheetData} className="bg-rose-500 text-white px-6 py-3 rounded-xl">ค้นหา</button>
                         </div>
-                      </div>
-                    </div>
+                        <div className="max-h-[300px] overflow-y-auto">
+                           {searchResults.map((row, idx) => (
+                             <div key={idx} className="p-3 border-b hover:bg-rose-50 cursor-pointer flex justify-between" onClick={() => selectActivity(row)}>
+                                <span>{row[4]}</span>
+                                <span className="text-rose-500 font-bold">เลือก</span>
+                             </div>
+                           ))}
+                        </div>
+                     </div>
                   </div>
+                </div>
+              )}
 
-                  {/* Sub-Header Information Bar */}
-                  <div className="bg-rose-50 border-b border-rose-100 p-4 text-sm space-y-2"> {/* Reduced spacing */}
-                    {/* Row 1: Project - Fix line height */}
-                    <div className="border-b border-rose-200 pb-2">
-                        <span className="block text-[10px] text-gray-500 font-bold">ภายใต้โครงการ</span>
-                        <span className="text-gray-800 font-medium break-words leading-snug block thai-fix-text" style={{ lineHeight: '1.6' }}>{formData.project || '-'}</span>
-                    </div>
+              <header className="bg-white shadow-sm sticky top-0 z-50 border-b border-rose-100 no-print-element">
+                <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-4">
+                  <img src="https://i.postimg.cc/0N30mLw5/logo-HDR.png" className="h-10" alt="Logo" />
+                  <h1 className="text-lg font-bold text-rose-600">รายงานผลการดำเนินงานกิจกรรม</h1>
+                </div>
+              </header>
 
-                    {/* Row 2: Responsible */}
-                    <div className="border-b border-rose-200 pb-2">
-                        <span className="block text-[10px] text-gray-500 font-bold">ผู้รับผิดชอบ</span>
-                        <span className="text-gray-800 font-medium">{formData.responsiblePerson || '-'}</span>
-                    </div>
-
-                    {/* Row 3: Status & Future (Grid) */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                          <span className="block text-[10px] text-gray-500 font-bold">สถานะ</span>
-                          <span className={`font-bold ${formData.activityStatus === 'completed' ? 'text-green-600' : 'text-amber-600'}`}>
-                             {getStatusLabel(formData.activityStatus)}
-                          </span>
-                      </div>
-                      <div>
-                          <span className="block text-[10px] text-gray-500 font-bold">การดำเนินงานในอนาคต</span>
-                          <span className="text-gray-800 font-medium">{getFutureLabel(formData.futureOperation)}</span>
-                      </div>
-                    </div>
+              <div className="max-w-7xl mx-auto mt-6 px-4 flex flex-col md:flex-row gap-6">
+                <aside className="w-full md:w-64 no-print-element">
+                  <div className="bg-white rounded-2xl shadow-sm border p-4 sticky top-24 space-y-2">
+                    {[
+                      { id: 1, label: '1. บทนำ', icon: <FileText size={18} /> },
+                      { id: 2, label: '2. วิเคราะห์ผล', icon: <BarChart2 size={18} /> },
+                      { id: 3, label: '3. แบบประเมิน', icon: <Star size={18} /> },
+                      { id: 4, label: '4. รูปภาพ', icon: <ImageIcon size={18} /> },
+                      { id: 5, label: '5. อินโฟกราฟฟิก', icon: <CheckCircle size={18} /> },
+                    ].map((tab) => (
+                      <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium ${activeTab === tab.id ? 'bg-rose-500 text-white shadow-md' : 'text-gray-600 hover:bg-rose-50'}`}>
+                        {tab.icon} {tab.label}
+                      </button>
+                    ))}
                   </div>
+                </aside>
 
-                  {/* Body Content */}
-                  <div className="p-4 space-y-3 flex-grow"> {/* Reduced padding and spacing */}
+                <main className="flex-grow">
+                  <div className="bg-white/80 backdrop-blur-sm rounded-3xl p-6 md:p-8 shadow-xl border border-white">
                     
-                    {/* Budget & Quality Row (Now with Header) */}
-                    <div className="border border-rose-100 rounded-xl overflow-hidden mb-2">
-                       <div className="bg-rose-50 px-4 py-2 border-b border-rose-100 flex justify-between items-center">
-                         <h3 className="font-bold text-rose-600 text-sm">สรุปงบประมาณและผลการประเมิน</h3>
-                       </div>
-                       <div className="p-3 bg-white">
-                          <div className="grid grid-cols-2 gap-4">
-                              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex justify-between items-center">
-                                  <div>
-                                      <p className="text-xs text-gray-500 font-bold">งบประมาณคงเหลือ</p>
-                                      <p className="text-xl font-bold text-rose-600">{formatNumber(budgetRemaining)} <span className="text-sm text-gray-400">บาท</span></p>
-                                  </div>
-                                  <div className="text-right">
-                                      <p className="text-[10px] text-gray-400">จัดสรร: {formData.budgetAllocated}</p>
-                                      <p className="text-[10px] text-gray-400">ใช้จริง: {formData.budgetUsed}</p>
-                                  </div>
-                              </div>
-                              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex justify-between items-center">
-                                   <div>
-                                      <p className="text-xs text-gray-500 font-bold">ผลการประเมิน</p>
-                                      <p className="text-xl font-bold text-rose-600">{assessmentResult.avg}</p>
-                                   </div>
-                                   <div className="text-right">
-                                       <span className="inline-block px-3 py-1 bg-rose-100 text-rose-700 rounded-full text-xs font-bold">
-                                           {assessmentResult.level.split(' ')[0]}
-                                       </span>
-                                       <p className="text-[9px] text-gray-400 mt-1">ระดับคุณภาพ</p>
-                                   </div>
-                              </div>
+                    {/* ... [Tab 1-4 Content] ... */}
+                    {activeTab === 1 && (
+                      <div className="animate-fadeIn no-print-element">
+                        <SectionTitle icon="📌" title="ส่วนที่ 1: ข้อมูลทั่วไป" rightElement={<button onClick={() => setShowSearchModal(true)} className="text-xs bg-rose-100 text-rose-600 px-3 py-1.5 rounded-lg font-bold">ดึงข้อมูลเก่า</button>} />
+                        <div className="space-y-2">
+                          <ExpandableField icon={<Tag size={16}/>} label="รหัสกิจกรรม" name="activityCode" value={formData.activityCode} onChange={handleInputChange} rows={1} />
+                          <ExpandableField icon={<FileText size={16}/>} label="ชื่อกิจกรรม" name="activityName" value={formData.activityName} onChange={handleInputChange} rows={2} />
+                          <ExpandableField icon={<Briefcase size={16}/>} label="ภายใต้โครงการ" name="project" value={formData.project} onChange={handleInputChange} rows={2} />
+                          <ExpandableField icon={<User size={16}/>} label="กลุ่มงาน" name="workGroup" value={formData.workGroup} onChange={handleInputChange} rows={1} />
+                          <ExpandableField icon={<User size={16}/>} label="ผู้รับผิดชอบ" name="responsiblePerson" value={formData.responsiblePerson} onChange={handleInputChange} rows={1} />
+                          <div className="mb-6 bg-white p-4 rounded-xl shadow-sm border border-rose-50">
+                            <label className="flex items-center gap-2 text-sm font-bold text-rose-600 mb-3"><Calendar size={16} className="opacity-70"/> ลักษณะกิจกรรม</label>
+                            <div className="flex flex-col sm:flex-row gap-4">
+                              <label className="flex items-center gap-3 cursor-pointer bg-rose-50 p-3 rounded-lg flex-1 border border-rose-100"><input type="radio" name="activityType" value="new" checked={formData.activityType === 'new'} onChange={handleInputChange} className="accent-rose-500 w-5 h-5" /><span>✨ กิจกรรมใหม่</span></label>
+                              <label className="flex items-center gap-3 cursor-pointer bg-rose-50 p-3 rounded-lg flex-1 border border-rose-100"><input type="radio" name="activityType" value="continuous" checked={formData.activityType === 'continuous'} onChange={handleInputChange} className="accent-rose-500 w-5 h-5" /><span>🔄 กิจกรรมต่อเนื่อง</span></label>
+                            </div>
                           </div>
-                       </div>
-                    </div>
-
-                    {/* Problems & Solutions - Fix line height */}
-                    <div className="border border-rose-100 rounded-xl overflow-hidden">
-                       <div className="bg-rose-50 px-4 py-2 border-b border-rose-100">
-                         <h3 className="font-bold text-rose-600 text-sm">ปัญหา อุปสรรค และแนวทางแก้ไข</h3>
-                       </div>
-                       <div className="p-3 bg-white grid grid-cols-2 divide-x divide-gray-100">
-                           <div className="pr-3">
-                               <h4 className="text-xs font-bold text-gray-500 mb-1">ปัญหา / อุปสรรค</h4>
-                               <ul className="text-xs text-gray-700 space-y-1 ml-1 leading-snug">
-                                  {formData.problems.filter(p => p.problem).map((p, i) => (
-                                      <li key={i} className="flex items-start gap-2 text-left">
-                                          <span className="mt-1 w-1 h-1 bg-red-400 rounded-full flex-shrink-0"></span>
-                                          <span className="break-words w-full thai-fix-text" style={{ lineHeight: '1.6' }}>{p.type}: {p.problem}</span>
-                                      </li>
-                                  ))}
-                                  {!formData.problems.some(p => p.problem) && <li className="text-gray-400 italic">- ไม่พบปัญหา -</li>}
-                               </ul>
-                           </div>
-                           <div className="pl-3">
-                               <h4 className="text-xs font-bold text-gray-500 mb-1">แนวทางแก้ไข</h4>
-                               <ul className="text-xs text-gray-700 space-y-1 ml-1 leading-snug">
-                                  {formData.problems.filter(p => p.solution).map((p, i) => (
-                                      <li key={i} className="flex items-start gap-2 text-left">
-                                          <span className="mt-1 w-1 h-1 bg-green-400 rounded-full flex-shrink-0"></span>
-                                          <span className="break-words w-full thai-fix-text" style={{ lineHeight: '1.6' }}>{p.solution}</span>
-                                      </li>
-                                  ))}
-                                  {!formData.problems.some(p => p.solution) && <li className="text-gray-400 italic">- ไม่มีข้อเสนอแนะ -</li>}
-                               </ul>
-                           </div>
-                       </div>
-                    </div>
-
-                    {/* Results Received - Fix line height */}
-                    <div className="border border-rose-100 rounded-xl overflow-hidden mt-2">
-                       <div className="bg-rose-50 px-4 py-2 border-b border-rose-100">
-                         <h3 className="font-bold text-rose-600 text-sm">ผลที่ได้รับ</h3>
-                       </div>
-                       <div className="p-3 bg-white">
-                           <ul className="text-xs text-gray-700 space-y-1 leading-snug">
-                              {splitTextToLi(formData.resultsReceived) || splitTextToLi(formData.expectedOutcome) || <li className="text-gray-400 italic">- ไม่มีข้อมูล -</li>}
-                           </ul>
-                       </div>
-                    </div>
-
-                    {/* Activity Images (LIMITED TO MAX 3) */}
-                    {formData.images.length > 0 && (
-                      <div className="border border-rose-100 rounded-xl p-3 bg-white mt-2">
-                        <div className="flex justify-between items-center mb-2">
-                           <h4 className="text-rose-600 font-bold text-xs">หลักฐานภาพกิจกรรม</h4>
                         </div>
-                        <div className={`grid gap-2 ${
-                          formData.images.length === 1 ? 'grid-cols-1' : // Changed to grid-cols-1 for single image
-                          formData.images.length === 2 ? 'grid-cols-2' : 
-                          'grid-cols-3' // 3 images
-                        }`}>
-                          {/* Limit to MAX 3 Images */}
-                          {formData.images.slice(0, 3).map((img, i) => { 
-                             let heightClass = 'h-40'; // Default height
-                             
-                             // Adjust height for single image
-                             if (formData.images.length === 1) heightClass = 'h-60'; // Taller (~240px)
-                             else if (formData.images.slice(0, 3).length === 3) heightClass = 'h-32'; // Shorter for 3 images
-                             
-                             return (
-                                <div key={i} className={`relative overflow-hidden rounded-lg border border-gray-100 group w-full`}>
-                                  <img 
-                                    src={img.url} 
-                                    className={`w-full object-cover ${heightClass} object-center`} 
-                                    alt="Activity" 
-                                  />
-                                  <button 
-                                     onClick={() => removeImage(i)}
-                                     className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                                     data-html2canvas-ignore="true" // Ignore this button in PDF
-                                     title="ลบรูปนี้"
-                                  >
-                                     <X size={12} />
-                                  </button>
+                        <ExpandableField label="1.1 วัตถุประสงค์" name="objectives" value={formData.objectives} onChange={handleInputChange} rows={4} />
+                        <div className="mt-8 bg-white p-6 rounded-2xl border border-rose-100 shadow-sm">
+                          <h3 className="font-bold text-rose-600 mb-4 text-lg">1.2 เป้าหมายและตัวชี้วัด 🎯</h3>
+                          <div className="overflow-x-auto bg-rose-50/50 rounded-xl p-4">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="text-left text-gray-600 border-b border-rose-200">
+                                  <th className="pb-3 w-10 text-center">ที่</th>
+                                  <th className="pb-3 w-32">ประเภท</th><th className="pb-3">ตัวชี้วัด/เป้าหมาย</th><th className="pb-3 w-48">วิธีการประเมิน</th><th className="pb-3 w-48">เครื่องมือ</th><th className="pb-3 w-10"></th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-rose-100">
+                                {formData.indicators.map((ind, idx) => (
+                                  <tr key={idx} className="group hover:bg-white transition-colors">
+                                    <td className="py-3 text-center align-top">{idx + 1}</td>
+                                    <td className="py-2 pr-2 align-top"><select className="w-full p-2 rounded-lg border" value={ind.type} onChange={(e) => updateIndicator(idx, 'type', e.target.value)}><option value="quantity">เชิงปริมาณ</option><option value="quality">เชิงคุณภาพ</option></select></td>
+                                    <td className="py-2 pr-2 align-top"><textarea className="w-full p-2 rounded-lg border" rows="2" value={ind.detail} onChange={(e) => updateIndicator(idx, 'detail', e.target.value)} /></td>
+                                    <td className="py-2 pr-2 align-top"><textarea className="w-full p-2 rounded-lg border" rows="2" value={ind.method} onChange={(e) => updateIndicator(idx, 'method', e.target.value)} /></td>
+                                    <td className="py-2 pr-2 align-top"><textarea className="w-full p-2 rounded-lg border" rows="2" value={ind.tool} onChange={(e) => updateIndicator(idx, 'tool', e.target.value)} /></td>
+                                    <td className="py-2 text-center align-top"><button onClick={() => {const newInd = formData.indicators.filter((_, i) => i !== idx); setFormData({...formData, indicators: newInd});}} className="text-rose-300 hover:text-red-500"><Trash2 size={16} /></button></td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            <button onClick={addIndicator} className="mt-4 w-full border-2 border-dashed border-rose-300 text-rose-500 font-medium hover:bg-rose-50 px-4 py-3 rounded-xl transition-colors flex justify-center items-center gap-2"><Plus size={18} /> เพิ่มรายการ</button>
+                          </div>
+                        </div>
+                        <div className="mt-6"><ExpandableField label="1.3 แหล่งงบประมาณ" name="budgetSource" value={formData.budgetSource} onChange={handleInputChange} rows={2} /></div>
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-rose-50"><label className="block text-sm font-bold text-rose-600 mb-2">1.4 งบประมาณที่จัดสรร (บาท)</label><input type="text" name="budgetAllocated" value={formData.budgetAllocated} onChange={handleInputChange} onBlur={handleNumberBlur} onFocus={handleNumberFocus} placeholder="0.00" className="w-full p-3 text-xl font-bold text-rose-600 rounded-lg border border-gray-200" /></div>
+                        <div className="mt-8 bg-white p-6 rounded-2xl border border-rose-100 shadow-sm">
+                           <h3 className="font-bold text-rose-600 mb-4 text-lg">1.5 ขั้นตอนการดำเนินงาน (PDCA) 🔄</h3>
+                           <div className="overflow-x-auto rounded-xl border border-rose-100">
+                             <table className="w-full text-sm text-left">
+                               <thead className="bg-rose-50 text-gray-600 font-medium"><tr><th className="p-4 w-32">ขั้นตอน</th><th className="p-4">การดำเนินงาน</th><th className="p-4 w-40">ระยะเวลา</th><th className="p-4 w-32 text-right">งบประมาณ</th><th className="p-4 w-40">ผู้รับผิดชอบ</th></tr></thead>
+                               <tbody className="divide-y divide-rose-50">{formData.pdca.map((row, idx) => (<tr key={idx}><td className="p-4 font-bold text-rose-500 align-top">{row.step}</td><td className="p-4 align-top"><textarea rows="2" className="w-full border rounded-lg p-2" value={row.operation} onChange={(e) => updatePDCA(idx, 'operation', e.target.value)} /></td><td className="p-4 align-top"><textarea rows="2" className="w-full border rounded-lg p-2" value={row.duration} onChange={(e) => updatePDCA(idx, 'duration', e.target.value)} /></td><td className="p-4 align-top"><input type="text" className="w-full border-b text-right" value={row.budget} onChange={(e) => updatePDCA(idx, 'budget', e.target.value)} onBlur={(e) => handlePDCABudgetBlur(idx, e.target.value)} /></td><td className="p-4 align-top"><textarea rows="2" className="w-full border rounded-lg p-2" value={row.responsible} onChange={(e) => updatePDCA(idx, 'responsible', e.target.value)} /></td></tr>))}</tbody>
+                             </table>
+                           </div>
+                        </div>
+                        <div className="mt-6"><ExpandableField label="1.6 ผลที่คาดว่าจะได้รับ" name="expectedOutcome" value={formData.expectedOutcome} onChange={handleInputChange} rows={4} /></div>
+                      </div>
+                    )}
+
+                    {activeTab === 2 && (
+                      <div className="animate-fadeIn no-print-element">
+                         <SectionTitle icon="📊" title="ส่วนที่ 2: วิเคราะห์และประเมิน" />
+                         <SubHeader title="2.1 สรุปงบประมาณ" />
+                         <div className="bg-gradient-to-br from-rose-50 to-white p-6 rounded-2xl mb-8 border border-rose-100 shadow-sm">
+                           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                              <div className="bg-white p-5 rounded-xl shadow-sm border border-rose-100 flex flex-col justify-center items-center"><p className="text-sm text-gray-500 mb-1">งบที่จัดสรร</p><p className="text-2xl font-bold text-gray-800">{formData.budgetAllocated || '0.00'}</p></div>
+                              <div className="bg-white p-5 rounded-xl shadow-sm border border-rose-100 flex flex-col justify-center items-center"><p className="text-sm text-gray-500 mb-1">งบที่ใช้จริง</p><input type="text" name="budgetUsed" value={formData.budgetUsed} onChange={handleInputChange} onBlur={handleNumberBlur} onFocus={handleNumberFocus} className="text-2xl font-bold text-rose-600 outline-none text-center w-full bg-transparent border-b border-dashed" placeholder="0.00"/></div>
+                              <div className={`p-5 rounded-xl shadow-sm border flex flex-col justify-center items-center ${budgetRemaining < 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}><p className="text-sm text-gray-600 mb-1">คงเหลือ</p><p className={`text-2xl font-bold ${budgetRemaining < 0 ? 'text-red-600' : 'text-green-600'}`}>{formatNumber(budgetRemaining)}</p></div>
+                           </div>
+                         </div>
+                         <SubHeader title="2.2 สถานะการดำเนินงาน" />
+                         <div className="mb-8 p-4 bg-white rounded-xl shadow-sm border border-gray-100"><div className="flex flex-wrap gap-4">{['completed:ดำเนินการเสร็จสิ้น ✅', 'in-progress:ยังไม่เสร็จสิ้น ⏳', 'not-started:ยังไม่ได้ดำเนินการ ❌'].map((status) => {const [val, label] = status.split(':'); return (<button key={val} onClick={() => setFormData({...formData, activityStatus: val})} className={`flex-1 py-4 px-6 rounded-xl border-2 text-sm font-bold ${formData.activityStatus === val ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-gray-400 border-gray-100'}`}>{label}</button>);})}</div></div>
+                         <SubHeader title="2.3 ผลสัมฤทธิ์ตามตัวชี้วัด" />
+                         <div className="mb-8 bg-white p-2 rounded-xl border border-rose-100 shadow-sm"><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-rose-50 text-gray-600"><tr><th className="p-4 text-left w-1/4">ตัวชี้วัด</th><th className="p-4 text-left w-1/4">เป้าหมาย</th><th className="p-4 text-left w-1/4">ผลการดำเนินงาน</th><th className="p-4 text-left w-1/4">การประเมิน</th></tr></thead><tbody className="divide-y divide-rose-50">{formData.indicatorResults.map((row, idx) => (<tr key={idx}><td className="p-4 text-gray-700 font-medium align-top">{row.detail}</td><td className="p-4 align-top"><textarea rows="3" className="w-full border rounded-lg p-2" value={row.target} onChange={(e) => updateIndicatorResult(idx, 'target', e.target.value)} /></td><td className="p-4 align-top"><textarea rows="3" className="w-full border rounded-lg p-2" value={row.result} onChange={(e) => updateIndicatorResult(idx, 'result', e.target.value)} /></td><td className="p-4 align-top"><select className={`w-full border rounded-lg p-2 text-xs font-bold ${row.assessment === 'achieved' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`} value={row.assessment} onChange={(e) => updateIndicatorResult(idx, 'assessment', e.target.value)}><option value="achieved">บรรลุเป้าหมาย</option><option value="not-achieved">ไม่บรรลุ</option></select></td></tr>))}</tbody></table></div></div>
+                         <div className="mb-8"><SubHeader title="2.4 การดำเนินงานในอนาคต" /><select value={formData.futureOperation} onChange={(e) => setFormData({...formData, futureOperation: e.target.value})} className="w-full p-4 rounded-xl border border-rose-200 bg-white text-lg font-medium"><option value="continue">🔵 พัฒนาต่อเนื่อง</option><option value="improve">🟡 ปรับปรุง</option><option value="discontinue">🔴 ไม่ควรดำเนินการต่อ</option></select></div>
+                         <div className="mb-8"><SubHeader title="2.5 ปัญหาและข้อเสนอแนะ" /><div className="grid grid-cols-1 gap-6">{formData.problems.map((prob, idx) => (<div key={idx} className="bg-white border border-rose-100 rounded-2xl p-6 shadow-sm"><div className="flex items-center gap-2 mb-4 border-b border-rose-50 pb-2"><h4 className="text-gray-700 font-bold text-base">{prob.type}</h4></div><div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div><label className="text-xs font-bold text-gray-400 block mb-2">ปัญหา</label><textarea rows="3" className="w-full p-3 bg-red-50 border border-red-100 rounded-xl text-sm" value={prob.problem} onChange={(e) => updateProblem(idx, 'problem', e.target.value)} /></div><div><label className="text-xs font-bold text-gray-400 block mb-2">แนวทางแก้ไข</label><textarea rows="3" className="w-full p-3 bg-green-50 border border-green-100 rounded-xl text-sm" value={prob.solution} onChange={(e) => updateProblem(idx, 'solution', e.target.value)} /></div></div></div>))}</div></div>
+                         <div className="mb-8"><SubHeader title="2.6 ผลที่ได้รับ" /><ExpandableField label="ผลที่ได้รับจากการดำเนินงาน" name="resultsReceived" value={formData.resultsReceived} onChange={(e) => setFormData({...formData, resultsReceived: e.target.value})} rows={4} /></div>
+                         
+                         {/* Signatures Section in Tab 2 */}
+                         <div className="mt-8 bg-white p-6 rounded-2xl border border-rose-100 shadow-sm">
+                           <SectionTitle icon="✍️" title="การรับรองรายงาน" />
+                           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                             {/* Reporter */}
+                             <div>
+                               <label className="block text-sm font-bold text-gray-700 mb-2">ผู้รายงาน</label>
+                               <input 
+                                 type="text" 
+                                 value={formData.signatures.reporter || formData.responsiblePerson} 
+                                 readOnly 
+                                 className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-500 cursor-not-allowed"
+                               />
+                               <p className="text-xs text-gray-400 mt-1">*ดึงข้อมูลจากผู้รับผิดชอบ</p>
+                             </div>
+
+                             {/* Deputy */}
+                             <div>
+                               <label className="block text-sm font-bold text-gray-700 mb-2">รองผู้อำนวยการ</label>
+                               <select 
+                                 value={formData.signatures.deputy} 
+                                 onChange={(e) => setFormData({...formData, signatures: {...formData.signatures, deputy: e.target.value}})}
+                                 className="w-full p-3 border border-gray-200 rounded-xl focus:border-rose-400 outline-none bg-white"
+                               >
+                                 <option value="นางสาวนราพร  ตาคำแสง">นางสาวนราพร  ตาคำแสง</option>
+                                 <option value="นายกานต์นิธิ  กิจมี">นายกานต์นิธิ  กิจมี</option>
+                                 <option value="นายวีระพันธ์  วงศ์สุวรรณ">นายวีระพันธ์  วงศ์สุวรรณ</option>
+                               </select>
+                             </div>
+
+                             {/* Director */}
+                             <div>
+                               <label className="block text-sm font-bold text-gray-700 mb-2">ผู้อำนวยการ</label>
+                               <input 
+                                 type="text" 
+                                 value={formData.signatures.director} 
+                                 onChange={(e) => setFormData({...formData, signatures: {...formData.signatures, director: e.target.value}})}
+                                 className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl"
+                               />
+                             </div>
+                           </div>
+                         </div>
+                      </div>
+                    )}
+
+                    {activeTab === 3 && (
+                      <div className="animate-fadeIn no-print-element">
+                         <SectionTitle icon="⭐" title="ส่วนที่ 3: แบบประเมินกิจกรรม" />
+                         <div className="space-y-8 pb-20">{[{title: '1. ด้านทรัพยากรที่ใช้', questions: [{ key: 'part1_1', text: '1.1 ความเหมาะสมของงบประมาณ' }, { key: 'part1_2', text: '1.2 ความเหมาะสมของกิจกรรม' }, { key: 'part1_3', text: '1.3 ความร่วมมือของบุคลากร' }, { key: 'part1_4', text: '1.4 ความเพียงพอของวัสดุอุปกรณ์' }, { key: 'part1_5', text: '1.5 ความเหมาะสมของสถานที่' }]}, {title: '2. ด้านกระบวนการดำเนินงาน', questions: [{ key: 'part2_1', text: '2.1 ดำเนินงานตามขั้นตอน' }, { key: 'part2_2', text: '2.2 ความเหมาะสมของขั้นตอน' }, { key: 'part2_3', text: '2.3 ส่งผลตามวัตถุประสงค์' }, { key: 'part2_4', text: '2.4 การมีส่วนร่วม' }]}, {title: '3. ด้านผลการดำเนินงาน', questions: [{ key: 'part3_1', text: '3.1 ผลเป็นไปตามวัตถุประสงค์' }, { key: 'part3_2', text: '3.2 ผลเป็นไปตามเป้าหมาย' }, { key: 'part3_3', text: '3.3 ผลเป็นไปตามตัวชี้วัด' }]}].map((section, sIdx) => (<div key={sIdx} className="bg-white rounded-2xl border border-rose-100 overflow-hidden shadow-sm"><div className="bg-rose-50/50 p-4 border-b border-rose-100"><h3 className="font-bold text-rose-600">{section.title}</h3></div><div className="divide-y divide-gray-50">{section.questions.map((q) => (<div key={q.key} className="p-4 flex flex-col md:flex-row md:items-center justify-between hover:bg-gray-50"><p className="text-gray-700 text-sm md:w-2/3 mb-3 md:mb-0 font-medium">{q.text}</p><div className="flex gap-2 justify-end">{[1, 2, 3, 4, 5].map((score) => (<button key={score} onClick={() => handleAssessmentChange(q.key, score)} className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold border ${formData.assessments[q.key] === score ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-gray-400 border-gray-200'}`}>{score}</button>))}</div></div>))}</div></div>))}</div>
+                         
+                         {/* Live Score Summary for Tab 3 */}
+                         <div className="fixed bottom-6 right-6 z-40 bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-xl border border-rose-200 flex items-center gap-6 animate-slideUp">
+                            <div>
+                              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">ผลการประเมินเฉลี่ย</h4>
+                              <p className="text-xs text-rose-400">จาก 12 ข้อคำถาม</p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                               <span className="text-4xl font-bold text-rose-600">{assessmentResult.avg}</span>
+                               <div className="flex flex-col items-start">
+                                  <span className="px-2 py-0.5 bg-rose-100 text-rose-700 text-xs font-bold rounded-md mb-1">{assessmentResult.level}</span>
+                                  <span className="text-[10px] text-gray-400">ระดับคุณภาพ</span>
+                               </div>
+                            </div>
+                         </div>
+                      </div>
+                    )}
+
+                    {activeTab === 4 && (
+                      <div className="animate-fadeIn no-print-element text-center py-10">
+                        <SectionTitle icon="📸" title="ส่วนที่ 4: รูปภาพกิจกรรม" />
+                        <label className="bg-rose-500 text-white px-6 py-3 rounded-xl cursor-pointer inline-flex items-center gap-2"><Camera size={20} /> อัพโหลดรูปภาพ<input type="file" className="hidden" onChange={handleImageUpload} /></label>
+                        <div className="grid grid-cols-2 gap-4 mt-8">{formData.images.map((img, i) => (<div key={i} className="relative group bg-white p-2 rounded-xl border"><img src={img.url} className="w-full aspect-video object-cover rounded-lg" alt="Report" /><input type="text" placeholder="คำบรรยาย..." className="w-full mt-2 text-center text-sm border-b focus:border-rose-500 outline-none" value={img.caption || ''} onChange={(e) => updateImageCaption(i, e.target.value)} /><button onClick={() => removeImage(i)} className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-full"><Trash2 size={16}/></button></div>))}</div>
+                      </div>
+                    )}
+
+                    {activeTab === 5 && (
+                      <div className="animate-fadeIn">
+                        <div className="flex justify-between items-center mb-6 no-print-element flex-wrap gap-2">
+                           <SectionTitle icon="📑" title="สรุปรายงาน (Infographic)" />
+                           <div className="flex gap-2">
+                             <button 
+                              onClick={handlePrintWindow}
+                              disabled={isPrinting}
+                              className="flex items-center gap-2 bg-green-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium hover:bg-green-700 shadow-lg"
+                              title="เปิดหน้าต่างใหม่เพื่อสั่งพิมพ์"
+                             >
+                               {isPrinting ? <Loader className="animate-spin" size={16} /> : <Printer size={16} />}
+                               พิมพ์
+                             </button>
+                             <button 
+                              onClick={handleSaveToCloud}
+                              disabled={isSaving}
+                              className="flex items-center gap-2 bg-rose-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium hover:bg-rose-700 shadow-lg"
+                             >
+                               {isSaving ? <Loader className="animate-spin" size={16}/> : <UploadCloud size={16} />} 
+                               บันทึกรายงาน
+                             </button>
+                           </div>
+                        </div>
+
+                        {/* Infographic Container */}
+                        <div 
+                          id="infographic-content" 
+                          className="bg-white mx-auto shadow-2xl overflow-hidden print-area flex flex-col font-sarabun" 
+                          style={{ width: '210mm', minHeight: 'auto', paddingBottom: '20px' }} 
+                        >
+                          
+                          {/* Updated Header (Red Box) */}
+                          <div className="bg-rose-600 text-white p-5 relative flex-shrink-0">
+                            <div className="relative z-10 flex items-center gap-4">
+                              {/* Logo Left */}
+                              <img src="https://i.postimg.cc/0N30mLw5/logo-HDR.png" className="h-16 w-auto bg-white rounded-lg p-1" alt="Logo" />
+                              
+                              <div className="flex-1">
+                                {/* Activity Name - Fix line height for Thai vowels */}
+                                <h1 className="text-xl font-bold mb-2 leading-tight break-words thai-fix-text" style={{ lineHeight: '1.8' }}>{formData.activityName || 'ชื่อกิจกรรม (Activity Name)'}</h1>
+                                
+                                {/* Row for Code/Group (Left) and Year (Right) */}
+                                <div className="flex justify-between items-end border-t border-rose-400/50 pt-2">
+                                   <span className="text-sm font-medium bg-white/20 px-2 py-0.5 rounded backdrop-blur-sm">
+                                     {formData.activityCode || 'CODE-XXXX'} | {formData.workGroup || 'กลุ่มงาน...'}
+                                   </span>
+                                   <span className="text-sm text-rose-100 font-bold">ปีการศึกษา 2568</span>
                                 </div>
-                             )
-                          })}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Sub-Header Information Bar */}
+                          <div className="bg-rose-50 border-b border-rose-100 p-4 text-sm space-y-2"> {/* Reduced spacing */}
+                            {/* Row 1: Project - Fix line height */}
+                            <div className="border-b border-rose-200 pb-2">
+                                <span className="block text-[10px] text-gray-500 font-bold">ภายใต้โครงการ</span>
+                                <span className="text-gray-800 font-medium break-words leading-snug block thai-fix-text" style={{ lineHeight: '1.6' }}>{formData.project || '-'}</span>
+                            </div>
+
+                            {/* Row 2: Responsible */}
+                            <div className="border-b border-rose-200 pb-2">
+                                <span className="block text-[10px] text-gray-500 font-bold">ผู้รับผิดชอบ</span>
+                                <span className="text-gray-800 font-medium">{formData.responsiblePerson || '-'}</span>
+                            </div>
+
+                            {/* Row 3: Status & Future (Grid) */}
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                  <span className="block text-[10px] text-gray-500 font-bold">สถานะ</span>
+                                  <span className={`font-bold ${formData.activityStatus === 'completed' ? 'text-green-600' : 'text-amber-600'}`}>
+                                     {getStatusLabel(formData.activityStatus)}
+                                  </span>
+                              </div>
+                              <div>
+                                  <span className="block text-[10px] text-gray-500 font-bold">การดำเนินงานในอนาคต</span>
+                                  <span className="text-gray-800 font-medium">{getFutureLabel(formData.futureOperation)}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Body Content */}
+                          <div className="p-4 space-y-3 flex-grow"> {/* Reduced padding and spacing */}
+                            
+                            {/* Budget & Quality Row (Now with Header) */}
+                            <div className="border border-rose-100 rounded-xl overflow-hidden mb-2">
+                               <div className="bg-rose-50 px-4 py-2 border-b border-rose-100 flex justify-between items-center">
+                                 <h3 className="font-bold text-rose-600 text-sm">สรุปงบประมาณและผลการประเมิน</h3>
+                               </div>
+                               <div className="p-3 bg-white">
+                                  <div className="grid grid-cols-2 gap-4">
+                                      <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex justify-between items-center">
+                                          <div>
+                                              <p className="text-xs text-gray-500 font-bold">งบประมาณคงเหลือ</p>
+                                              <p className="text-xl font-bold text-rose-600">{formatNumber(budgetRemaining)} <span className="text-sm text-gray-400">บาท</span></p>
+                                          </div>
+                                          <div className="text-right">
+                                              <p className="text-[10px] text-gray-400">จัดสรร: {formData.budgetAllocated}</p>
+                                              <p className="text-[10px] text-gray-400">ใช้จริง: {formData.budgetUsed}</p>
+                                          </div>
+                                      </div>
+                                      <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex justify-between items-center">
+                                           <div>
+                                              <p className="text-xs text-gray-500 font-bold">ผลการประเมิน</p>
+                                              <p className="text-xl font-bold text-rose-600">{assessmentResult.avg}</p>
+                                           </div>
+                                           <div className="text-right">
+                                               <span className="inline-block px-3 py-1 bg-rose-100 text-rose-700 rounded-full text-xs font-bold">
+                                                   {assessmentResult.level.split(' ')[0]}
+                                               </span>
+                                               <p className="text-[9px] text-gray-400 mt-1">ระดับคุณภาพ</p>
+                                           </div>
+                                      </div>
+                                  </div>
+                               </div>
+                            </div>
+
+                            {/* Problems & Solutions - Fix line height */}
+                            <div className="border border-rose-100 rounded-xl overflow-hidden">
+                               <div className="bg-rose-50 px-4 py-2 border-b border-rose-100">
+                                 <h3 className="font-bold text-rose-600 text-sm">ปัญหา อุปสรรค และแนวทางแก้ไข</h3>
+                               </div>
+                               <div className="p-3 bg-white grid grid-cols-2 divide-x divide-gray-100">
+                                   <div className="pr-3">
+                                       <h4 className="text-xs font-bold text-gray-500 mb-1">ปัญหา / อุปสรรค</h4>
+                                       <ul className="text-xs text-gray-700 space-y-1 ml-1 leading-snug">
+                                          {formData.problems.filter(p => p.problem).map((p, i) => (
+                                              <li key={i} className="flex items-start gap-2 text-left">
+                                                  <span className="mt-1 w-1 h-1 bg-red-400 rounded-full flex-shrink-0"></span>
+                                                  <span className="break-words w-full thai-fix-text" style={{ lineHeight: '1.6' }}>{p.type}: {p.problem}</span>
+                                              </li>
+                                          ))}
+                                          {!formData.problems.some(p => p.problem) && <li className="text-gray-400 italic">- ไม่พบปัญหา -</li>}
+                                       </ul>
+                                   </div>
+                                   <div className="pl-3">
+                                       <h4 className="text-xs font-bold text-gray-500 mb-1">แนวทางแก้ไข</h4>
+                                       <ul className="text-xs text-gray-700 space-y-1 ml-1 leading-snug">
+                                          {formData.problems.filter(p => p.solution).map((p, i) => (
+                                              <li key={i} className="flex items-start gap-2 text-left">
+                                                  <span className="mt-1 w-1 h-1 bg-green-400 rounded-full flex-shrink-0"></span>
+                                                  <span className="break-words w-full thai-fix-text" style={{ lineHeight: '1.6' }}>{p.solution}</span>
+                                              </li>
+                                          ))}
+                                          {!formData.problems.some(p => p.solution) && <li className="text-gray-400 italic">- ไม่มีข้อเสนอแนะ -</li>}
+                                       </ul>
+                                   </div>
+                               </div>
+                            </div>
+
+                            {/* Results Received - Fix line height */}
+                            <div className="border border-rose-100 rounded-xl overflow-hidden mt-2">
+                               <div className="bg-rose-50 px-4 py-2 border-b border-rose-100">
+                                 <h3 className="font-bold text-rose-600 text-sm">ผลที่ได้รับ</h3>
+                               </div>
+                               <div className="p-3 bg-white">
+                                   <ul className="text-xs text-gray-700 space-y-1 leading-snug">
+                                      {splitTextToLi(formData.resultsReceived) || splitTextToLi(formData.expectedOutcome) || <li className="text-gray-400 italic">- ไม่มีข้อมูล -</li>}
+                                   </ul>
+                               </div>
+                            </div>
+
+                            {/* Activity Images (LIMITED TO MAX 3) */}
+                            {formData.images.length > 0 && (
+                              <div className="border border-rose-100 rounded-xl p-3 bg-white mt-2">
+                                <div className="flex justify-between items-center mb-2">
+                                   <h4 className="text-rose-600 font-bold text-xs">หลักฐานภาพกิจกรรม</h4>
+                                </div>
+                                <div className={`grid gap-2 ${
+                                  formData.images.length === 1 ? 'grid-cols-1' : // Changed to grid-cols-1 for single image
+                                  formData.images.length === 2 ? 'grid-cols-2' : 
+                                  'grid-cols-3' // 3 images
+                                }`}>
+                                  {/* Limit to MAX 3 Images */}
+                                  {formData.images.slice(0, 3).map((img, i) => { 
+                                     let heightClass = 'h-40'; // Default height
+                                     
+                                     // Adjust height for single image
+                                     if (formData.images.length === 1) heightClass = 'h-60'; // Taller (~240px)
+                                     else if (formData.images.slice(0, 3).length === 3) heightClass = 'h-32'; // Shorter for 3 images
+                                     
+                                     return (
+                                        <div key={i} className={`relative overflow-hidden rounded-lg border border-gray-100 group w-full`}>
+                                          <img 
+                                            src={img.url} 
+                                            className={`w-full object-cover ${heightClass} object-center`} 
+                                            alt="Activity" 
+                                          />
+                                          <button 
+                                             onClick={() => removeImage(i)}
+                                             className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                             data-html2canvas-ignore="true" // Ignore this button in PDF
+                                             title="ลบรูปนี้"
+                                          >
+                                             <X size={12} />
+                                          </button>
+                                        </div>
+                                     )
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Signatures */}
+                            <div className={`grid gap-2 pt-4 mt-auto ${isWideReporter ? 'grid-cols-[50%_25%_25%]' : 'grid-cols-3'}`}>
+                               <div className="text-center">
+                                 <div className="h-8 border-b border-dotted border-gray-400 mb-1"></div>
+                                 <p className="text-[10px] font-bold text-gray-800 break-words">({formData.signatures.reporter || '................................'})</p>
+                                 <p className="text-[9px] text-gray-500">ผู้รายงาน</p>
+                               </div>
+                               <div className="text-center">
+                                 <div className="h-8 border-b border-dotted border-gray-400 mb-1"></div>
+                                 <p className="text-[10px] font-bold text-gray-800 break-words">({formData.signatures.deputy})</p>
+                                 <p className="text-[9px] text-gray-500">รองผู้อำนวยการ</p>
+                               </div>
+                               <div className="text-center">
+                                 <div className="h-8 border-b border-dotted border-gray-400 mb-1"></div>
+                                 <p className="text-[10px] font-bold text-gray-800 break-words">({formData.signatures.director})</p>
+                                 <p className="text-[9px] text-gray-500">ผู้อำนวยการ</p>
+                               </div>
+                            </div>
+
+                          </div>
                         </div>
                       </div>
                     )}
 
-                    {/* Signatures */}
-                    <div className={`grid gap-2 pt-4 mt-auto ${isWideReporter ? 'grid-cols-[50%_25%_25%]' : 'grid-cols-3'}`}>
-                       <div className="text-center">
-                         <div className="h-8 border-b border-dotted border-gray-400 mb-1"></div>
-                         <p className="text-[10px] font-bold text-gray-800 break-words">({formData.signatures.reporter || '................................'})</p>
-                         <p className="text-[9px] text-gray-500">ผู้รายงาน</p>
-                       </div>
-                       <div className="text-center">
-                         <div className="h-8 border-b border-dotted border-gray-400 mb-1"></div>
-                         <p className="text-[10px] font-bold text-gray-800 break-words">({formData.signatures.deputy})</p>
-                         <p className="text-[9px] text-gray-500">รองผู้อำนวยการ</p>
-                       </div>
-                       <div className="text-center">
-                         <div className="h-8 border-b border-dotted border-gray-400 mb-1"></div>
-                         <p className="text-[10px] font-bold text-gray-800 break-words">({formData.signatures.director})</p>
-                         <p className="text-[9px] text-gray-500">ผู้อำนวยการ</p>
-                       </div>
-                    </div>
-
                   </div>
-                </div>
+                </main>
               </div>
-            )}
+            </div>
+          );
+        };
 
-          </div>
-        </main>
-      </div>
-    </div>
-  );
-};
-
-export default ActivityReportApp;
+        const root = createRoot(document.getElementById('root'));
+        root.render(<ActivityReportApp />);
+    </script>
+</body>
+</html>
