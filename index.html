@@ -147,9 +147,9 @@
 
         const getFutureLabel = (val) => {
            const map = {
-            'continue': 'พัฒนาต่อเนื่อง',
-            'improve': 'ปรับปรุง',
-            'discontinue': 'ไม่ควรดำเนินการต่อ'
+            'continue': '🔵 พัฒนาต่อเนื่อง',
+            'improve': '🟡 ปรับปรุง',
+            'discontinue': '🔴 ไม่ควรดำเนินการต่อ'
           };
           return map[val] || val;
         }
@@ -422,6 +422,11 @@
           };
 
           const assessmentResult = calculateAssessmentScore();
+
+          // Calculate Indicator Achievement Summary
+          const allIndicatorsAchieved = formData.indicatorResults.length > 0 && formData.indicatorResults.every(i => i.assessment === 'achieved');
+          const indicatorStatusLabel = formData.indicatorResults.length === 0 ? '-' : (allIndicatorsAchieved ? '✅ บรรลุตามเป้าหมาย' : '❌ ไม่บรรลุตามเป้าหมาย');
+          const indicatorStatusColor = formData.indicatorResults.length === 0 ? 'text-gray-800' : (allIndicatorsAchieved ? 'text-green-600' : 'text-red-600');
 
           const handleInputChange = (e) => {
             const { name, value } = e.target;
@@ -751,17 +756,24 @@
                                 <span className="text-gray-800 font-medium">{formData.responsiblePerson || '-'}</span>
                             </div>
 
-                            {/* Row 3: Status & Future (Grid) */}
-                            <div className="grid grid-cols-2 gap-4">
+                            {/* Row 3: Status & Future (Grid) - Updated to 3 columns */}
+                            <div className="grid grid-cols-3 gap-2"> {/* Changed to grid-cols-3 */}
                               <div>
                                   <span className="block text-[10px] text-gray-500 font-bold">สถานะ</span>
-                                  <span className={`font-bold ${formData.activityStatus === 'completed' ? 'text-green-600' : 'text-amber-600'}`}>
+                                  <span className={`font-bold text-sm ${formData.activityStatus === 'completed' ? 'text-green-600' : 'text-amber-600'}`}>
                                      {getStatusLabel(formData.activityStatus)}
                                   </span>
                               </div>
                               <div>
                                   <span className="block text-[10px] text-gray-500 font-bold">การดำเนินงานในอนาคต</span>
-                                  <span className="text-gray-800 font-medium">{getFutureLabel(formData.futureOperation)}</span>
+                                  <span className="text-gray-800 font-medium text-sm">{getFutureLabel(formData.futureOperation)}</span>
+                              </div>
+                              {/* New Column: Indicator Summary */}
+                              <div>
+                                  <span className="block text-[10px] text-gray-500 font-bold">ผลการบรรลุตัวชี้วัด</span>
+                                  <span className={`font-bold text-sm ${indicatorStatusColor}`}>
+                                     {indicatorStatusLabel}
+                                  </span>
                               </div>
                             </div>
                           </div>
@@ -847,24 +859,28 @@
                                </div>
                             </div>
 
-                            {/* Activity Images (LIMITED TO MAX 3) */}
+                            {/* Activity Images (UPDATED TO MAX 4) */}
                             {formData.images.length > 0 && (
                               <div className="border border-rose-100 rounded-xl p-3 bg-white mt-2">
                                 <div className="flex justify-between items-center mb-2">
                                    <h4 className="text-rose-600 font-bold text-xs">หลักฐานภาพกิจกรรม</h4>
                                 </div>
                                 <div className={`grid gap-2 ${
-                                  formData.images.length === 1 ? 'grid-cols-1' : // Changed to grid-cols-1 for single image
+                                  formData.images.length === 1 ? 'grid-cols-1' : 
                                   formData.images.length === 2 ? 'grid-cols-2' : 
-                                  'grid-cols-3' // 3 images
+                                  formData.images.length === 3 ? 'grid-cols-3' :
+                                  'grid-cols-4' // 4 images layout
                                 }`}>
-                                  {/* Limit to MAX 3 Images */}
-                                  {formData.images.slice(0, 3).map((img, i) => { 
-                                     let heightClass = 'h-40'; // Default height
-                                     
-                                     // Adjust height for single image
-                                     if (formData.images.length === 1) heightClass = 'h-60'; // Taller (~240px)
-                                     else if (formData.images.slice(0, 3).length === 3) heightClass = 'h-32'; // Shorter for 3 images
+                                  {/* Limit to MAX 4 Images */}
+                                  {formData.images.slice(0, 4).map((img, i) => { 
+                                     let heightClass = 'h-32'; // Default height for 3-4 images
+                                     const count = Math.min(formData.images.length, 4);
+
+                                     // Adjust height based on count to fit row nicely
+                                     if (count === 1) heightClass = 'h-64'; 
+                                     else if (count === 2) heightClass = 'h-40';
+                                     else if (count === 3) heightClass = 'h-32';
+                                     else if (count === 4) heightClass = 'h-28'; // Slightly smaller for 4
                                      
                                      return (
                                         <div key={i} className={`relative overflow-hidden rounded-lg border border-gray-100 group w-full`}>
