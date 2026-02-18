@@ -353,31 +353,21 @@
                       <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
                       <script src="https://cdn.tailwindcss.com"><\/script>
                       <style>
-                        /* Forces hide header/footer in print */
-                        @page {
-                           size: A4;
-                           margin: 5mm;
-                        }
-                        body { 
-                          font-family: 'Sarabun', sans-serif; 
-                          margin: 0; 
-                          padding: 0;
-                          background-color: white;
-                        }
-                        #print-container {
-                           background: white;
-                           width: 100%;
-                           min-height: 297mm;
-                           margin: 0 auto;
-                           box-shadow: none;
-                        }
-                        * {
-                          -webkit-print-color-adjust: exact !important;
-                          print-color-adjust: exact !important;
-                        }
-                        .thai-fix-text {
-                           line-height: 1.8 !important;
-                           display: block;
+                        @page { size: A4; margin: 5mm; }
+                        body { font-family: 'Sarabun', sans-serif; margin: 0; padding: 0; background-color: white; }
+                        #print-container { background: white; width: 100%; min-height: 297mm; margin: 0 auto; box-shadow: none; }
+                        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                        .thai-fix-text { line-height: 1.8 !important; display: block; }
+                        
+                        /* [FIX 1] Force Print Styles for Header Box */
+                        @media print {
+                           .print-safe-box {
+                               background-color: white !important;
+                               color: #e11d48 !important; /* rose-600 */
+                               border: 1px solid #e11d48 !important;
+                               backdrop-filter: none !important;
+                               -webkit-backdrop-filter: none !important;
+                           }
                         }
                       </style>
                     </head>
