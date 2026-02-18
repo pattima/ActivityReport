@@ -733,7 +733,7 @@
                                 
                                 {/* Row for Code/Group (Left) and Year (Right) */}
                                 <div className="flex justify-between items-end border-t border-rose-400/50 pt-2">
-                                   <span className="text-sm font-medium bg-white/20 px-2 py-0.5 rounded backdrop-blur-sm">
+                                   <span className="print-safe-box text-sm font-medium bg-white/20 px-2 py-0.5 rounded backdrop-blur-sm">
                                      {formData.activityCode || 'CODE-XXXX'} | {formData.workGroup || 'กลุ่มงาน...'}
                                    </span>
                                    <span className="text-sm text-rose-100 font-bold">ปีการศึกษา 2568</span>
@@ -794,9 +794,9 @@
                                               <p className="text-xl font-bold text-rose-600">{formatNumber(budgetRemaining)} <span className="text-sm text-gray-400">บาท</span></p>
                                           </div>
                                           <div className="text-right">
-                                              <p className="text-[10px] text-gray-400">จัดสรร: {formData.budgetAllocated}</p>
-                                              <p className="text-[10px] text-gray-400">ใช้จริง: {formData.budgetUsed}</p>
-                                              <p className="text-[10px] text-gray-400">แหล่ง: {formData.budgetSource || '-'}</p>
+                                              <p className="text-[10px] text-gray-600">จัดสรร: {formData.budgetAllocated}</p>
+                                              <p className="text-[10px] text-gray-600">ใช้จริง: {formData.budgetUsed}</p>
+                                              <p className="text-[10px] text-gray-600">แหล่ง: {formData.budgetSource || '-'}</p>
                                           </div>
                                       </div>
                                       <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex justify-between items-center">
